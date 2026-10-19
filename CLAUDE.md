@@ -5,8 +5,45 @@ vapor app with three tools: an LLM chat that writes vapor code, a playground
 that compiles Zig/vapor code to wasm and runs it in an iframe, and a planner.
 Built on **reverb** (the user's HTTP server, `~/Desktop/Zig/reverb`).
 
-This repo was created on 2026-10-19 and is empty apart from this file,
-`.gitignore` and `tests/browser/`. Nothing here has been built yet.
+Created on 2026-10-19. Plan steps 1-3 are built (see "Status" below).
+
+## Status (2026-10-19)
+
+Done: steps 1, 2 and 3, and assembler-chat `5998ffc` (wasm URL carries the
+build id; the dead 5 s `call()` is gone). `zig build test` (18 tests, ~45 s)
+drives the real routes over a socket and runs real playground builds.
+
+Layout: `src/main.zig` (env, paths), `src/app.zig` (routes), `src/chat.zig`,
+`src/WasmBuilder.zig`, `src/Settings.zig` (every env var and its default),
+`src/vapor_prompt.md` (the system prompt; its examples and
+`src/testdata/prompt_api.zig` are compiled by the tests),
+`playground_template/`.
+
+Decisions and known gaps:
+
+- `POST /api/wasm/build` answers 200 with a 16-hex-char id; the wasm is
+  `GET /api/wasm/build/<id>.wasm` (the extension makes reverb send
+  `application/wasm`). Old builds are swept after an hour.
+- Reverb runs handlers on its single event loop with no way to answer from
+  another thread, so a build (~5 s) or a Claude call (up to minutes)
+  blocks every other request. That also serializes builds. Fixing it needs
+  deferred responses in reverb.
+- No memory cap on builds: macOS cannot set one per process. Cap it where
+  the backend is deployed (cgroup/container). Builds have a wall-clock
+  deadline that kills the `zig build` process group.
+- claude-zig, reverb-auth, stripe-zig and pg-orm are private on GitHub, so
+  `zig fetch` cannot reach them; claude-zig is a path dependency.
+- `/chat` and `/api/vertex` were never called against the real API (no key
+  in the session). Default model `claude-opus-5-5`.
+- The frontend runs `api.unescapeJson` on the chat reply, which turns a
+  `\n` inside a Zig string literal into a newline. The backend sends plain
+  text, so that call should go (step 6).
+- vapor 3.1.1 bug: `TextField(.float).bind(&f32)` does not compile
+  (`text_field/value.zig:518` assigns `evt.number()`'s `i32` to `f32`).
+- `main_sample.zig` does not compile on 3.1.1 (`.shadow(.{ .top = ... })`;
+  use `.shadow(.dropShadow(12, 12, 0, 0, color))`). `editor_sample.zig`
+  does.
+- reverb's `Date` header is a month ahead (`Nov` on 2026-10-19).
 
 ## Why it exists
 
