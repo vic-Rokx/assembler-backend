@@ -1,0 +1,14 @@
+.{
+    .name = .playground,
+    .version = "0.0.0",
+    .fingerprint = 0xdc188848e41f1abb,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        // Move with each vapor release, as metal does.
+        .vapor = .{
+            .url = "https://github.com/senet-toolbox/vapor/archive/refs/tags/v3.1.1.tar.gz",
+            .hash = "vapor-3.1.1-VGoNdYnwEwAoDDctBmqdky3a-6O9NZ4_FBhGUqYWTzEV",
+        },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src" },
+}

@@ -30,7 +30,22 @@ pub fn build(b: *std.Build) void {
     const run_step = b.step("run", "Run the backend");
     run_step.dependOn(&run_cmd.step);
 
-    const tests = b.addTest(.{ .root_module = exe_mod });
+    // The build tests compile real playground code against the template.
+    const test_options = b.addOptions();
+    test_options.addOption([]const u8, "playground_template", b.pathFromRoot("playground_template"));
+    const test_mod = b.createModule(.{
+        .root_source_file = b.path("src/main.zig"),
+        .target = target,
+        .optimize = optimize,
+        .imports = &.{
+            .{ .name = "reverb", .module = reverb.module("reverb") },
+            .{ .name = "test_options", .module = test_options.createModule() },
+        },
+    });
+    const tests = b.addTest(.{ .root_module = test_mod });
+    const run_tests = b.addRunArtifact(tests);
+    // The template and the zig toolchain are inputs the cache cannot see.
+    run_tests.has_side_effects = true;
     const test_step = b.step("test", "Run the tests");
-    test_step.dependOn(&b.addRunArtifact(tests).step);
+    test_step.dependOn(&run_tests.step);
 }

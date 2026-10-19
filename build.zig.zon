@@ -8,6 +8,9 @@
             .url = "git+https://github.com/senet-toolbox/reverb#57375b7e90e023d0eb32c1fdd9c62050aa0c876c",
             .hash = "reverb-0.0.0-Gtb4ydEZDABhHUdfbkqKWZIlVekhd9wSxdv2vzqlZUBM",
         },
+        // Private repo, so not fetchable by URL; the sibling checkout
+        // (5396745 when added).
+        .claude = .{ .path = "../claude-zig" },
     },
     .paths = .{
         "build.zig",

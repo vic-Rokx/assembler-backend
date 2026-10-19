@@ -14,6 +14,12 @@ port: u16 = 8080,
 /// The frontend's origin. Requests carry credentials, so CORS cannot use
 /// `*` and must name the origin exactly. 5173 is metal's dev server.
 allowed_origin: []const u8 = "http://localhost:5173",
+/// The fixed project playground code is built in.
+playground_template: []const u8 = "playground_template",
+/// Per-build folders and finished `.wasm` files. Created if missing.
+builds_dir: []const u8 = "builds",
+zig_exe: []const u8 = "zig",
+build_timeout_seconds: u32 = 60,
 
 pub fn fromEnv(env: *const Environ.Map) !Settings {
     var settings: Settings = .{};
@@ -22,6 +28,12 @@ pub fn fromEnv(env: *const Environ.Map) !Settings {
         settings.port = std.fmt.parseInt(u16, port, 10) catch return error.InvalidPort;
     }
     if (env.get("ALLOWED_ORIGIN")) |origin| settings.allowed_origin = origin;
+    if (env.get("PLAYGROUND_TEMPLATE")) |path| settings.playground_template = path;
+    if (env.get("BUILDS_DIR")) |path| settings.builds_dir = path;
+    if (env.get("ZIG")) |path| settings.zig_exe = path;
+    if (env.get("BUILD_TIMEOUT_SECONDS")) |seconds| {
+        settings.build_timeout_seconds = std.fmt.parseInt(u32, seconds, 10) catch return error.InvalidBuildTimeout;
+    }
     return settings;
 }
 
@@ -41,11 +53,13 @@ test "reads overrides from the environment" {
     try env.put("HOST", "0.0.0.0");
     try env.put("PORT", "9090");
     try env.put("ALLOWED_ORIGIN", "https://assembler.example");
+    try env.put("BUILD_TIMEOUT_SECONDS", "20");
 
     const settings = try fromEnv(&env);
     try std.testing.expectEqualStrings("0.0.0.0", settings.host);
     try std.testing.expectEqual(@as(u16, 9090), settings.port);
     try std.testing.expectEqualStrings("https://assembler.example", settings.allowed_origin);
+    try std.testing.expectEqual(@as(u32, 20), settings.build_timeout_seconds);
 }
 
 test "rejects a port that is not a u16" {
