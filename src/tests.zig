@@ -4,6 +4,8 @@ const std = @import("std");
 const testing = std.testing;
 const app = @import("app.zig");
 const WasmBuilder = @import("WasmBuilder.zig");
+const Settings = @import("Settings.zig");
+const chat = @import("chat.zig");
 const playground_template = @import("test_options").playground_template;
 
 const origin = "http://frontend.test";
@@ -18,6 +20,10 @@ const Harness = struct {
     /// Binds before the loop starts, so the port is connectable as soon as
     /// this returns. `h` must not move while the server runs.
     fn start(h: *Harness) !void {
+        return h.startWith(.{ .allowed_origin = origin });
+    }
+
+    fn startWith(h: *Harness, settings: Settings) !void {
         h.arena = .init(testing.allocator);
         errdefer h.arena.deinit();
         h.builds = testing.tmpDir(.{});
@@ -31,7 +37,7 @@ const Harness = struct {
 
         try h.server.new(.{ .port = 0 }, h.arena.allocator());
         errdefer h.server.deinit();
-        try app.register(&h.server, .{ .allowed_origin = origin }, testing.io, builder);
+        try app.register(&h.server, settings, testing.io, builder);
         try h.server.bindListener();
         h.port = try h.server.boundPort();
         h.thread = try std.Thread.spawn(.{}, serve, .{&h.server});
@@ -243,10 +249,73 @@ test "a build past its deadline is stopped and cleaned up" {
         .timeout = .fromMilliseconds(50),
     };
     const outcome = try builder.build(testing.allocator, "export fn init() void {}\n");
+    defer testing.allocator.free(outcome.failed);
     try testing.expectEqualStrings("error: the build took too long and was stopped", outcome.failed);
 
     var it = builds.dir.iterate();
     while (try it.next(testing.io)) |entry| {
         try testing.expectEqualStrings(".cache", entry.name);
+    }
+}
+
+test "chat answers 503 when its credentials are not configured" {
+    var h: Harness = undefined;
+    try h.start();
+    defer h.stop();
+
+    for ([_][]const u8{ "/chat", "/api/vertex" }) |path| {
+        const response = try h.post(path, "{\"query\": \"a counter\"}");
+        defer response.deinit();
+        try response.expectStatus("503");
+    }
+}
+
+test "chat rejects a body without a query before calling the model" {
+    var h: Harness = undefined;
+    try h.startWith(.{
+        .allowed_origin = origin,
+        .anthropic_api_key = "not-a-key",
+        .vertex_project_id = "project",
+        .vertex_access_token = "not-a-token",
+    });
+    defer h.stop();
+
+    for ([_][]const u8{ "/chat", "/api/vertex" }) |path| {
+        for ([_][]const u8{ "a counter", "{}", "{\"query\": \"  \"}" }) |body| {
+            const response = try h.post(path, body);
+            defer response.deinit();
+            try response.expectStatus("400");
+        }
+    }
+}
+
+test "every complete example in the system prompt compiles against the template" {
+    var builds = testing.tmpDir(.{});
+    defer builds.cleanup();
+    const builds_path = try builds.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
+    defer testing.allocator.free(builds_path);
+    const builder: WasmBuilder = .{ .io = testing.io, .template_path = playground_template, .builds_path = builds_path };
+
+    var sources: std.ArrayList([]const u8) = .empty;
+    defer sources.deinit(testing.allocator);
+    var blocks = std.mem.splitSequence(u8, chat.system_prompt, "```zig\n");
+    _ = blocks.next();
+    while (blocks.next()) |block| {
+        const code = block[0 .. std.mem.indexOf(u8, block, "```") orelse return error.UnclosedFence];
+        if (std.mem.indexOf(u8, code, "export fn init") != null) try sources.append(testing.allocator, code);
+    }
+    try testing.expect(sources.items.len >= 3);
+    // The prompt's prose names more API than its examples use.
+    try sources.append(testing.allocator, @embedFile("testdata/prompt_api.zig"));
+
+    for (sources.items) |source| {
+        switch (try builder.build(testing.allocator, source)) {
+            .built => {},
+            .failed => |errors| {
+                defer testing.allocator.free(errors);
+                std.debug.print("{s}\n---\n{s}\n", .{ errors, source });
+                return error.ExampleDoesNotCompile;
+            },
+        }
     }
 }

@@ -38,13 +38,13 @@ pub const Id = [16]u8;
 pub const Outcome = union(enum) {
     built: Id,
     /// Compiler diagnostics, `file:line:col: error: ...`, or a one-line
-    /// reason when there are none.
-    failed: []const u8,
+    /// reason when there are none. Owned by the caller.
+    failed: []u8,
 };
 
 pub fn build(b: *const WasmBuilder, gpa: Allocator, source: []const u8) !Outcome {
     const io = b.io;
-    if (source.len > max_source_len) return .{ .failed = "error: source is larger than 256 KB" };
+    if (source.len > max_source_len) return .{ .failed = try gpa.dupe(u8, "error: source is larger than 256 KB") };
 
     var builds = try Io.Dir.cwd().createDirPathOpen(io, b.builds_path, .{});
     defer builds.close(io);
@@ -72,8 +72,8 @@ pub fn build(b: *const WasmBuilder, gpa: Allocator, source: []const u8) !Outcome
     defer gpa.free(cache_path);
 
     const stderr = b.runZigBuild(gpa, build_path, cache_path) catch |err| switch (err) {
-        error.Timeout => return .{ .failed = "error: the build took too long and was stopped" },
-        error.StreamTooLong => return .{ .failed = "error: the build printed too much output" },
+        error.Timeout => return .{ .failed = try gpa.dupe(u8, "error: the build took too long and was stopped") },
+        error.StreamTooLong => return .{ .failed = try gpa.dupe(u8, "error: the build printed too much output") },
         else => return err,
     } orelse {
         try dir.rename("zig-out/bin/playground.wasm", builds, &(id ++ ".wasm".*), io);

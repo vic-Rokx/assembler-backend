@@ -40,5 +40,6 @@ pub fn main(init: std.process.Init) !void {
 test {
     _ = Settings;
     _ = WasmBuilder;
+    _ = @import("chat.zig");
     _ = @import("tests.zig");
 }

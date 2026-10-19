@@ -20,6 +20,17 @@ playground_template: []const u8 = "playground_template",
 builds_dir: []const u8 = "builds",
 zig_exe: []const u8 = "zig",
 build_timeout_seconds: u32 = 60,
+/// `POST /chat` answers 503 without it.
+anthropic_api_key: ?[]const u8 = null,
+claude_model: []const u8 = "claude-opus-5-5",
+/// `POST /api/vertex` answers 503 without both. The token is an OAuth
+/// access token (`gcloud auth print-access-token`), which expires hourly.
+vertex_project_id: ?[]const u8 = null,
+vertex_access_token: ?[]const u8 = null,
+/// A specific region: claude-zig builds `<region>-aiplatform.googleapis.com`,
+/// which has no form for `global`.
+vertex_region: []const u8 = "us-east5",
+vertex_model: []const u8 = "claude-opus-5-5",
 
 pub fn fromEnv(env: *const Environ.Map) !Settings {
     var settings: Settings = .{};
@@ -34,6 +45,12 @@ pub fn fromEnv(env: *const Environ.Map) !Settings {
     if (env.get("BUILD_TIMEOUT_SECONDS")) |seconds| {
         settings.build_timeout_seconds = std.fmt.parseInt(u32, seconds, 10) catch return error.InvalidBuildTimeout;
     }
+    if (env.get("ANTHROPIC_API_KEY")) |key| settings.anthropic_api_key = key;
+    if (env.get("CLAUDE_MODEL")) |model| settings.claude_model = model;
+    if (env.get("VERTEX_PROJECT_ID")) |id| settings.vertex_project_id = id;
+    if (env.get("VERTEX_ACCESS_TOKEN")) |token| settings.vertex_access_token = token;
+    if (env.get("VERTEX_REGION")) |region| settings.vertex_region = region;
+    if (env.get("VERTEX_MODEL")) |model| settings.vertex_model = model;
     return settings;
 }
 

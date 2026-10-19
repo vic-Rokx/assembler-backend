@@ -9,13 +9,21 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    const claude = b.dependency("claude", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const imports: []const std.Build.Module.Import = &.{
+        .{ .name = "reverb", .module = reverb.module("reverb") },
+        .{ .name = "claude", .module = claude.module("claude") },
+        .{ .name = "vertex", .module = claude.module("vertex") },
+    };
+
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{
-            .{ .name = "reverb", .module = reverb.module("reverb") },
-        },
+        .imports = imports,
     });
 
     const exe = b.addExecutable(.{
@@ -37,11 +45,9 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
-        .imports = &.{
-            .{ .name = "reverb", .module = reverb.module("reverb") },
-            .{ .name = "test_options", .module = test_options.createModule() },
-        },
     });
+    for (imports) |import| test_mod.addImport(import.name, import.module);
+    test_mod.addImport("test_options", test_options.createModule());
     const tests = b.addTest(.{ .root_module = test_mod });
     const run_tests = b.addRunArtifact(tests);
     // The template and the zig toolchain are inputs the cache cannot see.

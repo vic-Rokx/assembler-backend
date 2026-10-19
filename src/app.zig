@@ -4,6 +4,7 @@ const reverb = @import("reverb");
 const Context = reverb.Context;
 const Settings = @import("Settings.zig");
 const WasmBuilder = @import("WasmBuilder.zig");
+const chat = @import("chat.zig");
 
 pub const Config = struct {
     host: []const u8 = "127.0.0.1",
@@ -20,13 +21,14 @@ pub const Server = reverb.Server(Config);
 /// What the handlers need. Reverb handlers take only a `Context`, so this
 /// is set once by `register`.
 const State = struct {
+    settings: Settings,
     io: std.Io,
     builder: WasmBuilder,
 };
 var state: State = undefined;
 
 pub fn register(server: *Server, settings: Settings, io: std.Io, builder: WasmBuilder) !void {
-    state = .{ .io = io, .builder = builder };
+    state = .{ .settings = settings, .io = io, .builder = builder };
 
     try server.useCors(.{ .cors_headers = .{
         .origin = .{ .override = settings.allowed_origin },
@@ -34,12 +36,22 @@ pub fn register(server: *Server, settings: Settings, io: std.Io, builder: WasmBu
     } });
 
     try server.get("/", ping, &.{});
+    try server.post("/chat", postChat, &.{});
+    try server.post("/api/vertex", postVertex, &.{});
     try server.post("/api/wasm/build", buildWasm, &.{});
     try server.get("/api/wasm/build/:file", getWasm, &.{});
 }
 
 fn ping(ctx: *Context) !void {
     try ctx.STRING("SUCCESS");
+}
+
+fn postChat(ctx: *Context) !void {
+    try chat.anthropic(ctx, &state.settings);
+}
+
+fn postVertex(ctx: *Context) !void {
+    try chat.googleVertex(ctx, &state.settings);
 }
 
 /// The body is the playground's `main.zig`. Answers 200 with the build id,
