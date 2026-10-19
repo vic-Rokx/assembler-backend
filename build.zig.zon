@@ -1,0 +1,17 @@
+.{
+    .name = .assembler_backend,
+    .version = "0.0.0",
+    .fingerprint = 0x7431a4c01f4a36ca,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .reverb = .{
+            .url = "git+https://github.com/senet-toolbox/reverb#57375b7e90e023d0eb32c1fdd9c62050aa0c876c",
+            .hash = "reverb-0.0.0-Gtb4ydEZDABhHUdfbkqKWZIlVekhd9wSxdv2vzqlZUBM",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+    },
+}
