@@ -82,9 +82,11 @@ Settings). Those don't involve this backend.
    request to one shared `wasm/src/main.zig` and ran `zig build` with no
    limits. Instead:
    - A template vapor 3.x project in this repo (`playground_template/`:
-     build.zig, build.zig.zon pinned to vapor **v3.1.0** tarball, hash
-     `vapor-3.1.0-VGoNdfzpEwANQgFjk27hTc5WVg2sMRW6JtUOnWCmjVHz`, plus
-     vaporize if the samples need it). Mirror assembler-chat's
+     build.zig, build.zig.zon pinned to vapor **v3.1.1** tarball
+     `https://github.com/senet-toolbox/vapor/archive/refs/tags/v3.1.1.tar.gz`,
+     hash `vapor-3.1.1-VGoNdYnwEwAoDDctBmqdky3a-6O9NZ4_FBhGUqYWTzEV`, plus
+     vaporize if the samples need it; it's on 3.1.1 too). Move the pin with
+     each vapor release, the same way metal does. Mirror assembler-chat's
      `build.zig` (wasm32-wasi, `entry = .disabled`, `rdynamic`, theme and
      config modules).
    - Each build goes in its own folder under `builds/<id>/`: copy the
@@ -142,13 +144,12 @@ Settings). Those don't involve this backend.
   session gives you). **Never push, tag, create remotes, or rename repos
   without asking.**
 - Other repos: ask before writing into one that has uncommitted user work.
-  As of 2026-10-19 these are uncommitted on purpose; don't commit or revert
-  them:
-  - `../vapor`: fixes under CHANGELOG `[Unreleased]` (timeouts, transitions,
-    morph, migrate).
-  - `../ryven`: its vapor 3.x migration.
-  - `../assembler-chat`: its migration, on top of snapshot commit `003c529`.
-  Changes to those repos go on top, with a note to the user.
+  State on 2026-10-19:
+  - vapor **3.1.1** is released (timeouts, transitions, morph, migrate fixes).
+  - ryven's 3.x migration is pushed (`03b71e1`).
+  - assembler-chat's migration is committed (`d9855b4`). It has no remote;
+    its frontend changes (build id in the wasm URL, the playground fixes
+    above) go there as new commits.
 - Vapor changes need a browser test in `../vapor/tests/browser` (page in
   `app/src/main.zig`, test in `run.mjs`). Show it fails without the fix,
   then run `zig build browser-test` in all four modes
