@@ -1,5 +1,6 @@
 // End to end: the playground's Submit builds the editor's sample on this
-// backend, and the frame runs the build.
+// backend, and the frame runs the build; the header names the versions
+// builds use; and a compile error is underlined where the compiler says.
 // Usage: SITE=<assembler-chat dir> node playground.mjs
 //   after `zig build` here and `zig build` in assembler-chat (whose default
 //   backend URL, http://localhost:8080, is where this starts the backend).
@@ -213,6 +214,40 @@ try {
   // Let late errors (hooks, a second render) arrive.
   await sleep(1000);
   if (cdp.problems.length) throw new Error(`page errors:\n  ${[...new Set(cdp.problems)].join("\n  ")}`);
+
+  const versions = await (await fetch(`http://127.0.0.1:${backendPort}/api/wasm/versions`)).json();
+  await waitFor(
+    `document.body.innerText.includes("Zig Version: ${versions.zig}") && document.body.innerText.includes("Vapor Version: ${versions.vapor}")`,
+    `the header to show zig ${versions.zig} and vapor ${versions.vapor}`,
+    10_000,
+  );
+
+  // An error past line 255, which a u8 line number cannot reach.
+  const broken = [
+    'const Vapor = @import("vapor");',
+    ...Array.from({ length: 296 }, (_, i) => `// filler ${i}`),
+    "export fn init() void {",
+    "    Vapor.init(.{});",
+    "    notDeclared();",
+    "}",
+    "",
+  ].join("\n");
+  await evaluate(`(() => {
+    const editor = document.querySelector("textarea");
+    editor.value = ${JSON.stringify(broken)};
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await evaluate(`[...document.querySelectorAll("button *")].find((e) => e.textContent.trim().startsWith("Submit")).closest("button").click()`);
+  const underlined = `[...document.querySelectorAll("span, p")]
+    .filter((e) => e.children.length === 0 && getComputedStyle(e).textDecorationStyle === "wavy")
+    .map((e) => e.textContent.trim())`;
+  await waitFor(`${underlined}.length > 0`, "the compile error to be underlined", buildTimeoutMs);
+  const marked = await evaluate(underlined);
+  if (JSON.stringify(marked) !== JSON.stringify(["notDeclared"])) throw new Error(`underlined ${JSON.stringify(marked)}, expected ["notDeclared"]`);
+  console.log(`compile error on line 300 underlined: ${JSON.stringify(marked)}`);
+  // A failed build is an answer, not a page error; nothing else may log.
+  const unexpected = cdp.problems.filter((p) => !p.includes("500"));
+  if (unexpected.length) throw new Error(`page errors:\n  ${[...new Set(unexpected)].join("\n  ")}`);
 } catch (err) {
   failure = err;
 }

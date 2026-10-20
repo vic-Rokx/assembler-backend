@@ -48,6 +48,7 @@ const State = struct {
     /// worker.
     gpa: Allocator,
     builder: WasmBuilder,
+    versions: WasmBuilder.Versions,
     /// The users table's database; null when sign-in is off.
     db: ?*pg.Pool,
     builds: reverb.Workers(BuildJob, runBuild),
@@ -58,12 +59,21 @@ var state: State = undefined;
 /// Starts the worker pools and adds the routes. Call `deinit` once
 /// `listen` has returned and before `server.deinit`. `db` is required
 /// when `settings.signInConfigured()`, and must already be migrated.
-pub fn register(server: *Server, settings: Settings, io: std.Io, gpa: Allocator, builder: WasmBuilder, db: ?*pg.Pool) !void {
+pub fn register(
+    server: *Server,
+    settings: Settings,
+    io: std.Io,
+    gpa: Allocator,
+    builder: WasmBuilder,
+    versions: WasmBuilder.Versions,
+    db: ?*pg.Pool,
+) !void {
     state = .{
         .settings = settings,
         .io = io,
         .gpa = gpa,
         .builder = builder,
+        .versions = versions,
         .db = db,
         .builds = undefined,
         .chats = undefined,
@@ -83,6 +93,7 @@ pub fn register(server: *Server, settings: Settings, io: std.Io, gpa: Allocator,
     try server.post("/api/vertex", postVertex, &.{});
     try server.post("/api/wasm/build", buildWasm, &.{});
     try server.get("/api/wasm/build/:file", getWasm, &.{});
+    try server.get("/api/wasm/versions", getVersions, &.{});
 
     if (settings.signInConfigured()) try registerSignIn(server);
 }
@@ -181,6 +192,15 @@ fn runBuild(job: BuildJob) void {
             job.reply.send(500, content_type, errors);
         },
     }
+}
+
+/// `GET /api/wasm/versions`: `{"zig": "0.16.0", "vapor": "3.1.2"}`, what
+/// playground code is built with.
+fn getVersions(ctx: *Context) !void {
+    // Not `ctx.JSON`: it allocates from memory that lives as long as the
+    // process, so every response would leak.
+    const body = try std.json.Stringify.valueAlloc(ctx.requestAllocator(), state.versions, .{});
+    try ctx.SEND(200, "application/json", body);
 }
 
 /// `GET /api/wasm/build/<id>.wasm`. The extension is in the URL so reverb

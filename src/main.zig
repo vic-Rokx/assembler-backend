@@ -28,6 +28,12 @@ pub fn main(init: std.process.Init) !void {
         .timeout = .fromSeconds(settings.build_timeout_seconds),
     };
 
+    // Builds would fail anyway if zig cannot run, so find out now.
+    const versions = builder.versions(arena) catch |err| {
+        std.log.err("reading the playground's zig and vapor versions: {any}", .{err});
+        return err;
+    };
+
     // Sign-in stores users, so its database must be there from the start
     // rather than fail the first person to sign in.
     const db: ?*pg.Pool = if (settings.signInConfigured()) blk: {
@@ -50,7 +56,7 @@ pub fn main(init: std.process.Init) !void {
     server.reply_allocator = init.gpa;
 
     try server.installSignalHandlers();
-    try app.register(&server, settings, io, init.gpa, builder, db);
+    try app.register(&server, settings, io, init.gpa, builder, versions, db);
     // Before `server.deinit`: jobs still queued send their replies.
     defer app.deinit();
 

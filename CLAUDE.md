@@ -5,7 +5,7 @@ vapor app with three tools: an LLM chat that writes vapor code, a playground
 that compiles Zig/vapor code to wasm and runs it in an iframe, and a planner.
 Built on **reverb** (the user's HTTP server, `~/Desktop/Zig/reverb`).
 
-Created on 2026-10-19. Plan steps 1-5 are built (see "Status" below).
+Created on 2026-10-19. Plan steps 1-6 are built (see "Status" below).
 
 ## Status (2026-10-19)
 
@@ -62,6 +62,30 @@ button, or the user and Sign out; the callback page reports the outcome.
   builder's `RETURNING` maps no columns back. This backend builds its
   `pg.Pool` itself and upserts with raw SQL.
 
+Step 6 (2026-10-20): assembler-chat `b9eca94`, vaporize `a526e0c`.
+Every `src/main.zig:L:C` error and note in a failed build is underlined
+in the editor (`src/routes/diagnostics.zig`, unit-tested by assembler-chat's
+new `zig build test`). The placeholder never underlined anything: the
+editor's `recompile` clears its errors before drawing, so vaporize gained
+`addExternalError`, which survives it. The header shows
+`GET /api/wasm/versions` (`{"zig","vapor"}`, read at startup from
+`zig version` and the template's pin). Chat replies are used as sent.
+
+- The frontend never calls `/chat`: its one caller, `submitViaBackend`,
+  is commented out. Claude and GPT models are called from the browser with
+  the user's own keys; only the Vertex toggle reaches this backend
+  (`/api/vertex`). The unescaping fix is on that path, checked by building
+  and reading, not in a browser.
+- reverb's `ctx.JSON` formats into `ctx.arena`, which lives as long as the
+  process, so every JSON response leaks its body. reverb-auth's session
+  routes use it. `/api/wasm/versions` builds its JSON in request memory
+  instead. The fix is a one-line reverb change (`requestAllocator()`).
+- vaporize's `zig build test` runs none of `ZigParser.zig`'s tests: its
+  root never references them, and they need an app's vapor (with its
+  config and theme modules) to build.
+- `src/routes/Playground.zig` in assembler-chat is an older copy that only
+  `check.zig` compiles; it still has the placeholder and the old versions.
+
 Layout: `src/main.zig` (env, paths), `src/app.zig` (routes), `src/chat.zig`,
 `src/WasmBuilder.zig`, `src/Settings.zig` (every env var and its default),
 `src/vapor_prompt.md` (the system prompt; its examples and
@@ -91,9 +115,6 @@ Decisions and known gaps:
   `zig fetch` cannot reach them; claude-zig is a path dependency.
 - `/chat` and `/api/vertex` were never called against the real API (no key
   in the session). Default model `claude-opus-5-5`.
-- The frontend runs `api.unescapeJson` on the chat reply, which turns a
-  `\n` inside a Zig string literal into a newline. The backend sends plain
-  text, so that call should go (step 6).
 - vapor 3.1.x bug (still in 3.1.2): `TextField(.float).bind(&f32)` does not compile
   (`text_field/value.zig:518` assigns `evt.number()`'s `i32` to `f32`).
 - reverb's `Date` header is a month ahead (`Nov` on 2026-10-19).
@@ -226,7 +247,9 @@ Settings). Those don't involve this backend.
 - The playground: `SITE=../assembler-chat node tests/browser/playground.mjs`
   starts this backend on :8080 itself (stop any other first), clicks
   Submit, and waits for the sample to render in the frame with no errors
-  in page or frame. Needs `zig build` here and in assembler-chat.
+  in page or frame; checks the header's versions; then submits code with
+  an error on line 300 and requires exactly that token underlined. Needs
+  `zig build` here and in assembler-chat.
 - Sign-in: `SITE=../assembler-chat node tests/browser/signin.mjs` with the
   test database up. It starts this backend on :8080, plays Google (Chrome's
   request to Google's sign-in page is answered with the redirect back; the

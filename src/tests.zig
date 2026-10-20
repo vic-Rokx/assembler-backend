@@ -13,6 +13,10 @@ const playground_template = @import("test_options").playground_template;
 
 const origin = "http://frontend.test";
 
+/// What the harness reports at `/api/wasm/versions`; reading the real ones
+/// runs `zig_exe`, which some tests replace.
+const test_versions: WasmBuilder.Versions = .{ .zig = "0.16.0", .vapor = "3.1.2" };
+
 const Harness = struct {
     arena: std.heap.ArenaAllocator,
     builds: testing.TmpDir,
@@ -47,7 +51,7 @@ const Harness = struct {
         errdefer h.server.deinit();
         // Leak-checks every reply.
         h.server.reply_allocator = testing.allocator;
-        try app.register(&h.server, settings, testing.io, testing.allocator, builder, db);
+        try app.register(&h.server, settings, testing.io, testing.allocator, builder, test_versions, db);
         errdefer app.deinit();
         try h.server.bindListener();
         h.port = try h.server.boundPort();
@@ -265,6 +269,29 @@ test "an empty build request is rejected" {
     const response = try h.post("/api/wasm/build", " \n");
     defer response.deinit();
     try response.expectStatus("400");
+}
+
+test "the versions playground code is built with" {
+    var h: Harness = undefined;
+    try h.start();
+    defer h.stop();
+
+    const response = try h.get("/api/wasm/versions");
+    defer response.deinit();
+    try response.expectStatus("200");
+    try testing.expect(response.hasHeader("Content-Type: application/json"));
+    try testing.expectEqualStrings("{\"zig\":\"0.16.0\",\"vapor\":\"3.1.2\"}", response.body);
+}
+
+test "the template's versions are read from zig and its pin" {
+    var builds = testing.tmpDir(.{});
+    defer builds.cleanup();
+    const builder: WasmBuilder = .{ .io = testing.io, .template_path = playground_template, .builds_path = "unused" };
+    var arena: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena.deinit();
+    const versions = try builder.versions(arena.allocator());
+    try testing.expectEqualStrings(@import("builtin").zig_version_string, versions.zig);
+    try testing.expectEqualStrings("3.1.2", versions.vapor);
 }
 
 test "a wasm that was never built is a 404" {

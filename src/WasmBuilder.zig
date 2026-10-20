@@ -92,6 +92,38 @@ pub fn wasmPath(b: *const WasmBuilder, gpa: Allocator, id: []const u8) !?[]u8 {
     return try std.fs.path.join(gpa, &.{ b.builds_path, name });
 }
 
+/// What playground code is built with, for the playground's header.
+pub const Versions = struct {
+    zig: []const u8,
+    vapor: []const u8,
+};
+
+/// Reads the versions builds use: `zig version` of `zig_exe`, and the
+/// vapor the template pins, which its package hash names
+/// (`vapor-3.1.2-VGoN...`). Strings are allocated from `gpa`.
+pub fn versions(b: *const WasmBuilder, gpa: Allocator) !Versions {
+    const run = try std.process.run(gpa, b.io, .{ .argv = &.{ b.zig_exe, "version" } });
+    defer gpa.free(run.stderr);
+    defer gpa.free(run.stdout);
+    if (run.term != .exited or run.term.exited != 0) return error.ZigVersionFailed;
+    const zig = try gpa.dupe(u8, std.mem.trim(u8, run.stdout, " \t\r\n"));
+    errdefer gpa.free(zig);
+
+    var template = try Io.Dir.cwd().openDir(b.io, b.template_path, .{});
+    defer template.close(b.io);
+    const zon = try template.readFileAlloc(b.io, "build.zig.zon", gpa, .limited(64 * 1024));
+    defer gpa.free(zon);
+    return .{ .zig = zig, .vapor = try gpa.dupe(u8, vaporVersion(zon) orelse return error.NoVaporPin) };
+}
+
+/// The version in the template's `.hash = "vapor-<version>-<digest>"`.
+fn vaporVersion(zon: []const u8) ?[]const u8 {
+    const prefix = "\"vapor-";
+    const at = std.mem.indexOf(u8, zon, prefix) orelse return null;
+    const rest = zon[at + prefix.len ..];
+    return rest[0 .. std.mem.indexOfScalar(u8, rest, '-') orelse return null];
+}
+
 fn isId(text: []const u8) bool {
     if (text.len != @sizeOf(Id)) return false;
     for (text) |c| switch (c) {
@@ -214,6 +246,16 @@ fn isCaret(line: []const u8) bool {
 }
 
 const testing = std.testing;
+
+test "the vapor version comes from the template's package hash" {
+    try testing.expectEqualStrings("3.1.2", vaporVersion(
+        \\.vapor = .{
+        \\    .url = "https://github.com/senet-toolbox/vapor/archive/refs/tags/v3.1.2.tar.gz",
+        \\    .hash = "vapor-3.1.2-VGoNdV_4EwBU_DHNiZyunjUJy07WAJB2mh_wjjVioLti",
+        \\},
+    ).?);
+    try testing.expectEqual(@as(?[]const u8, null), vaporVersion(".dependencies = .{},"));
+}
 
 test "cleanErrors keeps located diagnostics with their snippets" {
     const stderr =
