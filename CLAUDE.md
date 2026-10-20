@@ -92,6 +92,17 @@ editor's `recompile` clears its errors before drawing, so vaporize gained
 - `src/routes/Playground.zig` in assembler-chat is an older copy that only
   `check.zig` compiles; it still has the placeholder and the old versions.
 
+Exhibition readiness (2026-10-20): every dependency pinned by URL (a lone
+clone builds); MIT licenses; READMEs with screenshots (assembler-chat
+`docs/`, taken headlessly from the running app); `.env.example`;
+`Dockerfile` (Zig 0.16 + the template precompiled; checked to build and
+serve a wasm); assembler-chat's `zig build site` and `scripts/serve.mjs`
+(app :5173, frame :5174); CI in both repos, green: here the 33 tests
+against a Postgres service, both browser tests in headless Chrome against
+the built site, and the Docker image. CI's first Linux run found that
+`builds/` was opened without `iterate`, which Linux needs to list it: Debug
+builds panicked, release builds silently never swept.
+
 Layout: `src/main.zig` (env, paths), `src/app.zig` (routes), `src/chat.zig`,
 `src/WasmBuilder.zig`, `src/Settings.zig` (every env var and its default),
 `src/vapor_prompt.md` (the system prompt; its examples and
