@@ -43,6 +43,10 @@ button, or the user and Sign out; the callback page reports the outcome.
   -U postgres -c "CREATE DATABASE assembler_test"`. 5432 and 5433 are
   taken by other projects' containers on this machine; leave them alone.
   Run the backend with `DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54329/assembler`.
+- Settings may also come from a git-ignored `.env` in the working
+  directory (`KEY=value` lines); the real environment wins over it. The
+  local one holds the Google client, `SESSION_SECRET` and a `DATABASE_URL`
+  for the `assembler-pg` container. Never print its values.
 - Never signed in with real Google: there is no client secret here. The
   frontend's client id is `403015953227-…`; its secret goes in
   `GOOGLE_CLIENT_SECRET`, and `OAUTH_REDIRECT_URI` must be listed for that

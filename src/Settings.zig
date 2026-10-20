@@ -95,6 +95,29 @@ pub fn fromEnv(env: *const Environ.Map) !Settings {
     return settings;
 }
 
+/// Adds the `KEY=value` lines of a `.env` file to `env`, for development,
+/// where secrets live in a git-ignored file rather than the shell. A
+/// variable already in `env` wins, so a deployment's environment is never
+/// overridden by a stray file. Blank lines and `#` comments are skipped,
+/// `export ` is allowed, and a value may be wrapped in single or double
+/// quotes; nothing is expanded or unescaped.
+pub fn loadDotEnv(env: *Environ.Map, contents: []const u8) !void {
+    var lines = std.mem.splitScalar(u8, contents, '\n');
+    while (lines.next()) |raw| {
+        var line = std.mem.trim(u8, raw, " \t\r");
+        if (line.len == 0 or line[0] == '#') continue;
+        if (std.mem.startsWith(u8, line, "export ")) line = std.mem.trimStart(u8, line["export ".len..], " \t");
+        const eq = std.mem.indexOfScalar(u8, line, '=') orelse return error.InvalidDotEnv;
+        const key = std.mem.trimEnd(u8, line[0..eq], " \t");
+        var value = std.mem.trimStart(u8, line[eq + 1 ..], " \t");
+        if (value.len >= 2 and (value[0] == '"' or value[0] == '\'') and value[value.len - 1] == value[0]) {
+            value = value[1 .. value.len - 1];
+        }
+        if (key.len == 0) return error.InvalidDotEnv;
+        if (env.get(key) == null) try env.put(key, value);
+    }
+}
+
 /// Whether Google sign-in, and with it the users table, is enabled.
 pub fn signInConfigured(settings: *const Settings) bool {
     return settings.google_client_id != null and
@@ -159,6 +182,27 @@ test "sign-in needs the client, its secret and a long enough session secret" {
 
     try env.put("SESSION_SECRET", "0123456789abcdef0123456789abcdef");
     try std.testing.expect((try fromEnv(&env)).signInConfigured());
+}
+
+test ".env adds what the environment lacks, and never overrides it" {
+    var env = Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put("PORT", "9000");
+    try loadDotEnv(&env,
+        \\# local secrets
+        \\
+        \\PORT=8080
+        \\export GOOGLE_CLIENT_ID = 123-abc.apps.googleusercontent.com
+        \\GOOGLE_CLIENT_SECRET="se=cret # not a comment"
+        \\SESSION_SECRET='0123456789abcdef0123456789abcdef'
+        \\
+    );
+    try std.testing.expectEqualStrings("9000", env.get("PORT").?);
+    try std.testing.expectEqualStrings("123-abc.apps.googleusercontent.com", env.get("GOOGLE_CLIENT_ID").?);
+    try std.testing.expectEqualStrings("se=cret # not a comment", env.get("GOOGLE_CLIENT_SECRET").?);
+    try std.testing.expectEqualStrings("0123456789abcdef0123456789abcdef", env.get("SESSION_SECRET").?);
+
+    try std.testing.expectError(error.InvalidDotEnv, loadDotEnv(&env, "NOT A SETTING"));
 }
 
 test "pool sizes are read and must be positive" {

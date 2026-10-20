@@ -8,6 +8,17 @@ const pg = @import("pg_orm").pg;
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
     const arena = init.arena.allocator();
+    // Development keeps secrets in a git-ignored `.env`; the real
+    // environment wins over it.
+    if (std.Io.Dir.cwd().readFileAlloc(io, ".env", arena, .limited(64 * 1024))) |dotenv| {
+        Settings.loadDotEnv(init.environ_map, dotenv) catch |err| {
+            std.log.err(".env: {any} (every line is KEY=value, or a # comment)", .{err});
+            return err;
+        };
+    } else |err| switch (err) {
+        error.FileNotFound => {},
+        else => return err,
+    }
     const settings = Settings.fromEnv(init.environ_map) catch |err| {
         std.log.err("bad environment: {any}", .{err});
         return err;
