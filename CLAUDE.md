@@ -118,8 +118,10 @@ Decisions and known gaps:
 - No memory cap on builds: macOS cannot set one per process. Cap it where
   the backend is deployed (cgroup/container). Builds have a wall-clock
   deadline that kills the `zig build` process group.
-- claude-zig, reverb-auth, stripe-zig and pg-orm are private on GitHub, so
-  `zig fetch` cannot reach them; claude-zig is a path dependency.
+- Every dependency is pinned by URL and hash, so a clone builds on its own
+  (claude-zig, reverb-auth and pg-orm were made public on 2026-10-20).
+  To develop against a sibling checkout, swap one for `.{ .path = "../x" }`
+  temporarily; don't commit that form.
 - `/chat` and `/api/vertex` were never called against the real API (no key
   in the session). Default model `claude-opus-5-5`.
 - vapor 3.1.x bug (still in 3.1.2): `TextField(.float).bind(&f32)` does not compile
