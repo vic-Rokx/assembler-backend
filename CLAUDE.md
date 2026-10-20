@@ -53,13 +53,14 @@ button, or the user and Sign out; the callback page reports the outcome.
   is `403015953227-…`; `http://localhost:5173/auth/callback` is its
   registered redirect URI. Other origins need their own entry in Google
   Cloud and `OAUTH_REDIRECT_URI`.
-- Sign-in runs on the event loop (a Google call, a few hundred ms):
-  reverb's deferred replies cannot set cookies after the handler returns.
-  The fix is a `Reply` that can carry cookies.
-- reverb's cookies have no `SameSite`, so they default to Lax: the frontend
-  and backend must be the same site (`app.example.com` and
-  `api.example.com` are; two unrelated domains are not), and production
-  needs `SECURE_COOKIES=1`.
+- Sign-in and refresh run on reverb-auth's workers (deferred replies that
+  set cookies, reverb `f5ec29a`); bootstrap, validate and sign-out stay on
+  the loop. A test holds the fake Google's answer and requires `GET /` to
+  answer meanwhile.
+- Session cookies are `SameSite=Lax` (`COOKIE_SAMESITE`). That works while
+  the frontend and backend are the same site (`app.example.com` and
+  `api.example.com`); a frontend on another site needs
+  `COOKIE_SAMESITE=none` with `SECURE_COOKIES=1`, which startup enforces.
 - vapor's KeyStone makes the OAuth `state` from a timestamp, which is
   guessable; it should be random. A vapor change.
 - pg-orm bugs found, not fixed (it has uncommitted work): `Connection.init`
@@ -108,7 +109,7 @@ Decisions and known gaps:
   503. Requests may wait 10 min for a reply (`Config.reply_timeout_ms`).
   Shutdown waits for queued jobs to finish, which can take a while with
   builds queued.
-- reverb is pinned at `07ccfa8` (deferred replies, and `ctx.JSON` no longer
+- reverb is pinned at `f5ec29a` (deferred replies with cookies, `ctx.JSON` no longer
   leaking), which pins Loom
   `8d791ac`. Both are pushed.
 - The deferred chat path was never run against a model: claude-zig's base
@@ -151,7 +152,7 @@ after the snapshot.
 
 | Package | Commit | Use |
 |---|---|---|
-| reverb | `07ccfa87f4d029c77b6a3f23a295419866959ff1` | HTTP server. Public. Pinned here by URL and hash (see `build.zig.zon`); metal still pins the older `57375b7`. README has the `Server(Config)` quickstart and "Replying later". |
+| reverb | `f5ec29adb64af6c85c5f51abf91b0f2f522d7b91` | HTTP server. Public. Pinned here by URL and hash (see `build.zig.zon`); metal still pins the older `57375b7`. README has the `Server(Config)` quickstart and "Replying later". |
 | claude-zig | `5396745` | Claude + Vertex clients (modules `claude`, `vertex`). Reads no env itself: `init.environ_map.get("ANTHROPIC_API_KEY")` in `main` (see `examples/claude_demo.zig`). It no longer injects any system prompt; this backend must send its own. |
 | reverb-auth | `a47c0e5` | OAuth (Google, GitHub), sessions, JWT. Its README says reverb is private; that's stale (reverb is public now). It uses a path dep on `../reverb`. |
 | stripe-zig | `2f20771` | Stripe client, for `/checkout` (later). |

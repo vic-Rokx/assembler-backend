@@ -4,6 +4,7 @@
 //! `std.process.Init`, so this takes the map rather than reading globals.
 const std = @import("std");
 const Environ = std.process.Environ;
+const Cookie = @import("reverb").Cookie;
 
 const Settings = @This();
 
@@ -56,6 +57,11 @@ session_secret: ?[]const u8 = null,
 /// Mark session cookies `Secure`. On wherever the backend is served over
 /// HTTPS.
 secure_cookies: bool = false,
+/// The session cookies' `SameSite`. `lax` works while the frontend is on
+/// the same site as this backend (`app.example.com` and
+/// `api.example.com`); a frontend on another site needs `none`, which
+/// requires `SECURE_COOKIES`.
+cookie_same_site: Cookie.SameSite = .lax,
 /// The Postgres holding the `users` table. Used only with sign-in.
 database_url: []const u8 = "postgres://postgres:postgres@127.0.0.1:5432/assembler",
 
@@ -91,6 +97,11 @@ pub fn fromEnv(env: *const Environ.Map) !Settings {
         settings.session_secret = secret;
     }
     if (env.get("SECURE_COOKIES")) |flag| settings.secure_cookies = std.mem.eql(u8, flag, "1") or std.mem.eql(u8, flag, "true");
+    if (env.get("COOKIE_SAMESITE")) |value| {
+        settings.cookie_same_site = std.meta.stringToEnum(Cookie.SameSite, value) orelse return error.InvalidCookieSameSite;
+    }
+    // Browsers drop a SameSite=None cookie that is not also Secure.
+    if (settings.cookie_same_site == .none and !settings.secure_cookies) return error.SameSiteNoneNeedsSecureCookies;
     if (env.get("DATABASE_URL")) |url| settings.database_url = url;
     return settings;
 }
@@ -203,6 +214,20 @@ test ".env adds what the environment lacks, and never overrides it" {
     try std.testing.expectEqualStrings("0123456789abcdef0123456789abcdef", env.get("SESSION_SECRET").?);
 
     try std.testing.expectError(error.InvalidDotEnv, loadDotEnv(&env, "NOT A SETTING"));
+}
+
+test "SameSite is lax unless set, and none needs secure cookies" {
+    var env = Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try std.testing.expectEqual(Cookie.SameSite.lax, (try fromEnv(&env)).cookie_same_site);
+
+    try env.put("COOKIE_SAMESITE", "none");
+    try std.testing.expectError(error.SameSiteNoneNeedsSecureCookies, fromEnv(&env));
+    try env.put("SECURE_COOKIES", "1");
+    try std.testing.expectEqual(Cookie.SameSite.none, (try fromEnv(&env)).cookie_same_site);
+
+    try env.put("COOKIE_SAMESITE", "Lax");
+    try std.testing.expectError(error.InvalidCookieSameSite, fromEnv(&env));
 }
 
 test "pool sizes are read and must be positive" {

@@ -100,11 +100,9 @@ pub fn register(
 
 /// reverb-auth's routes for vapor's KeyStone: `/exchange/google/token`,
 /// `/auth/session/{bootstrap,refresh,signout}` and
-/// `/auth/validate/google/session`.
-///
-/// These run on the event loop. A sign-in or refresh calls Google, which
-/// takes a few hundred milliseconds; reverb's deferred replies cannot set
-/// cookies after the handler returns, which these must.
+/// `/auth/validate/google/session`. Sign-in and refresh wait on Google,
+/// so reverb-auth runs them on its own workers; the users upsert
+/// (`onSignIn`) runs there too.
 fn registerSignIn(server: *Server) !void {
     const settings = &state.settings;
     std.debug.assert(state.db != null);
@@ -117,10 +115,12 @@ fn registerSignIn(server: *Server) !void {
         } },
         .session_secret = settings.session_secret.?,
         .secure_cookies = settings.secure_cookies,
+        .same_site = settings.cookie_same_site,
         .on_sign_in = onSignIn,
-    }, state.gpa);
+    }, state.gpa, state.io);
 }
 
+/// On a sign-in worker; the pool is threadsafe.
 fn onSignIn(allocator: Allocator, user: KeyStone.SignedIn) anyerror![]const u8 {
     return users.upsert(state.db.?, allocator, user);
 }
@@ -130,6 +130,7 @@ fn onSignIn(allocator: Allocator, user: KeyStone.SignedIn) anyerror![]const u8 {
 pub fn deinit() void {
     state.builds.deinit();
     state.chats.deinit();
+    KeyStone.deinit();
 }
 
 fn ping(ctx: *Context) !void {

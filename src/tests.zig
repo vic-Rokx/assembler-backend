@@ -561,6 +561,11 @@ const TestDb = struct {
 
 /// Stands in for Google's token endpoint: answers each request with
 /// `status` and `answer`, and keeps the form it was sent.
+///
+/// While `held` is set it keeps a request waiting, as a slow Google would.
+/// If the test has not released it within five seconds it refuses the
+/// request, so a server that waits on Google fails the test instead of
+/// hanging it.
 const FakeGoogle = struct {
     server: std.Io.net.Server,
     thread: std.Thread,
@@ -569,6 +574,9 @@ const FakeGoogle = struct {
     answer: []u8 = &.{},
     form: []u8 = &.{},
     stopping: std.atomic.Value(bool) = .init(false),
+    held: std.atomic.Value(bool) = .init(false),
+    /// Requests received so far.
+    received: std.atomic.Value(usize) = .init(0),
 
     fn start(g: *FakeGoogle) !void {
         const address: std.Io.net.IpAddress = .{ .ip4 = .loopback(0) };
@@ -640,6 +648,16 @@ const FakeGoogle = struct {
         const form = try request.readerExpectNone(&body_buf).allocRemaining(testing.allocator, .unlimited);
         testing.allocator.free(g.form);
         g.form = form;
+        _ = g.received.fetchAdd(1, .acq_rel);
+
+        var waited: usize = 0;
+        while (g.held.load(.acquire)) : (waited += 1) {
+            if (waited == 500) {
+                try request.respond("{\"error\":\"held too long\"}", .{ .status = .bad_request, .keep_alive = false });
+                return writer.interface.flush();
+            }
+            try testing.io.sleep(.fromMilliseconds(10), .awake);
+        }
         try request.respond(g.answer, .{
             .status = g.status,
             .keep_alive = false,
@@ -715,7 +733,7 @@ test "Google sign-in stores the user and starts a session the next request sees"
     const session = cookie(signed_in, "keystone_session_token") orelse return error.NoSessionCookie;
     try testing.expectEqualStrings(parsed.value.token, session);
     try testing.expectEqualStrings("refresh-1", cookie(signed_in, "keystone_refresh_token") orelse return error.NoRefreshCookie);
-    try testing.expect(std.mem.indexOf(u8, signed_in.head, "HttpOnly") != null);
+    try testing.expect(std.mem.indexOf(u8, signed_in.head, "HttpOnly; SameSite=Lax") != null);
 
     const cookie_header = try std.fmt.allocPrint(testing.allocator, "Cookie: keystone_session_token={s}\r\n", .{session});
     defer testing.allocator.free(cookie_header);
@@ -736,6 +754,41 @@ test "Google sign-in stores the user and starts a session the next request sees"
     const name = try db.nameOf("google-sub-1");
     defer testing.allocator.free(name);
     try testing.expectEqualStrings("Ada Lovelace", name);
+}
+
+test "a sign-in waiting on Google does not hold up other requests" {
+    const db = try TestDb.open();
+    defer db.close();
+    var google: FakeGoogle = undefined;
+    try google.start();
+    defer google.stop();
+    var h: Harness = undefined;
+    try h.startWithDb(signInSettings(&google), db.pool);
+    defer h.stop();
+
+    try google.signIn("google-sub-1", "Ada", "test-client");
+    google.held.store(true, .release);
+    const pending = try h.sendPostWith(
+        "/exchange/google/token",
+        "Content-Type: application/x-www-form-urlencoded\r\n",
+        "auth-code=4/slow&state=&nonce=",
+    );
+    defer pending.close(testing.io);
+    for (0..500) |_| {
+        if (google.received.load(.acquire) > 0) break;
+        try testing.io.sleep(.fromMilliseconds(10), .awake);
+    } else return error.GoogleNeverAsked;
+
+    // Answered while the sign-in is still waiting on Google.
+    const ping = try h.get("/");
+    defer ping.deinit();
+    try ping.expectStatus("200");
+
+    google.held.store(false, .release);
+    const signed_in = try receive(pending);
+    defer signed_in.deinit();
+    try signed_in.expectStatus("200");
+    try testing.expect(cookie(signed_in, "keystone_session_token") != null);
 }
 
 test "a code Google refuses is a 401 and stores nobody" {
