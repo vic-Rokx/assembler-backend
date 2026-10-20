@@ -5,7 +5,7 @@ vapor app with three tools: an LLM chat that writes vapor code, a playground
 that compiles Zig/vapor code to wasm and runs it in an iframe, and a planner.
 Built on **reverb** (the user's HTTP server, `~/Desktop/Zig/reverb`).
 
-Created on 2026-10-19. Plan steps 1-4 are built (see "Status" below).
+Created on 2026-10-19. Plan steps 1-5 are built (see "Status" below).
 
 ## Status (2026-10-19)
 
@@ -26,6 +26,41 @@ The frame is same-origin with assembler-chat and unsandboxed, so playground
 code can read the app's cookies and storage. It runs the user's own (or
 the model's) code in the user's browser, so this is self-XSS, not a hole
 for others, but a sandboxed frame on another origin would be safer.
+
+Step 5 (2026-10-20): Google sign-in, with users in Postgres. reverb-auth
+(`5f11737`, `348d719`, local) installs the routes vapor's KeyStone calls
+(`/exchange/google/token`, `/auth/session/{bootstrap,refresh,signout}`,
+`/auth/validate/google/session`) when `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET` and `SESSION_SECRET` are set; each sign-in upserts
+`users` (`src/users.zig`, keyed by Google's `sub`) and the session names
+the row's id. assembler-chat `a320530`: the login page is the Google
+button, or the user and Sign out; the callback page reports the outcome.
+`/user` and `/api/users` are gone (the old form never signed anyone in).
+
+- Postgres for development and tests: `docker run -d --name assembler-pg
+  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=assembler -p
+  127.0.0.1:54329:5432 postgres:17`, then `docker exec assembler-pg psql
+  -U postgres -c "CREATE DATABASE assembler_test"`. 5432 and 5433 are
+  taken by other projects' containers on this machine; leave them alone.
+  Run the backend with `DATABASE_URL=postgres://postgres:postgres@127.0.0.1:54329/assembler`.
+- Never signed in with real Google: there is no client secret here. The
+  frontend's client id is `403015953227-…`; its secret goes in
+  `GOOGLE_CLIENT_SECRET`, and `OAUTH_REDIRECT_URI` must be listed for that
+  client in Google Cloud. A made-up client got Google's real
+  `invalid_client`, and the backend answered 401.
+- Sign-in runs on the event loop (a Google call, a few hundred ms):
+  reverb's deferred replies cannot set cookies after the handler returns.
+  The fix is a `Reply` that can carry cookies.
+- reverb's cookies have no `SameSite`, so they default to Lax: the frontend
+  and backend must be the same site (`app.example.com` and
+  `api.example.com` are; two unrelated domains are not), and production
+  needs `SECURE_COOKIES=1`.
+- vapor's KeyStone makes the OAuth `state` from a timestamp, which is
+  guessable; it should be random. A vapor change.
+- pg-orm bugs found, not fixed (it has uncommitted work): `Connection.init`
+  gives `pg.Pool` an `Io` pointing at its own stack frame, and the insert
+  builder's `RETURNING` maps no columns back. This backend builds its
+  `pg.Pool` itself and upserts with raw SQL.
 
 Layout: `src/main.zig` (env, paths), `src/app.zig` (routes), `src/chat.zig`,
 `src/WasmBuilder.zig`, `src/Settings.zig` (every env var and its default),
@@ -114,8 +149,7 @@ credentials.
 | `POST /api/vertex` | `routes/api.zig` `submitToBackendVertex` | same | reply text |
 | `POST /api/wasm/build` | `routes/Playground_state_switch.zig` `getWasm` | raw body = the editor's `main.zig` source | 200 `success`, or 500 whose body starts `file:line:col: error: …` (the frontend splits on `:`) |
 | `GET /api/wasm/build` | same file, `handleWasmResponse` → `Vapor.Wasm.runPlaygroundWasm(url)` | none | the built `.wasm` bytes |
-| `POST /user` | `routes/auth/login/Page.zig` `createAccount` | JSON `Details{name,email,password}` | text |
-| `POST /api/users` | same file, `createUser` | JSON user | text |
+| `POST /exchange/google/token`, `/auth/session/*`, `/auth/validate/google/session` | vapor's KeyStone (`keystone/KeyStone.zig`) | form `auth-code`, `state`, `nonce`; cookies | KeyStone's JSON session shapes |
 | `POST /checkout` | same file, `payment` (not wired to UI yet) | form-encoded | redirect URL in body |
 
 The browser calls Anthropic and OpenAI directly in some paths (keys from
@@ -193,6 +227,14 @@ Settings). Those don't involve this backend.
   starts this backend on :8080 itself (stop any other first), clicks
   Submit, and waits for the sample to render in the frame with no errors
   in page or frame. Needs `zig build` here and in assembler-chat.
+- Sign-in: `SITE=../assembler-chat node tests/browser/signin.mjs` with the
+  test database up. It starts this backend on :8080, plays Google (Chrome's
+  request to Google's sign-in page is answered with the redirect back; the
+  code exchange goes to a fake token endpoint), and checks the login page
+  shows the user and Sign out signs them out. `zig build test` runs the
+  sign-in routes against a fake Google and `TEST_DATABASE_URL` (default
+  the container above); without a database those four tests are skipped,
+  saying so.
 - Without the backend, assembler-chat logs only network errors (verified
   2026-10-19, Debug and ReleaseSmall).
 
