@@ -18,9 +18,9 @@ the frame side of `Vapor.Wasm.runPlaygroundWasm`, and assembler-chat's
 `playground.html` uses it instead of the forked 2.x runtime. Builds render
 at `/` in the frame. `tests/browser/playground.mjs` checks it end to end.
 The frame loads assembler-chat's runtime (vapor by path, HEAD) and runs
-builds made against the template's pin (v3.1.1), so the two must stay
-compatible: move the template pin when the runtime's ABI changes. vapor
-`58b5944` is local, not pushed or released.
+builds made against the template's pin (v3.1.2), so the two must stay
+compatible: move the template pin when the runtime's ABI changes. Released
+as vapor 3.1.2 (pushed, tag `v3.1.2`); the template is pinned to it.
 
 The frame is same-origin with assembler-chat and unsandboxed, so playground
 code can read the app's cookies and storage. It runs the user's own (or
@@ -59,7 +59,7 @@ Decisions and known gaps:
 - The frontend runs `api.unescapeJson` on the chat reply, which turns a
   `\n` inside a Zig string literal into a newline. The backend sends plain
   text, so that call should go (step 6).
-- vapor 3.1.1 bug: `TextField(.float).bind(&f32)` does not compile
+- vapor 3.1.x bug (still in 3.1.2): `TextField(.float).bind(&f32)` does not compile
   (`text_field/value.zig:518` assigns `evt.number()`'s `i32` to `f32`).
 - reverb's `Date` header is a month ahead (`Nov` on 2026-10-19).
 
@@ -140,7 +140,8 @@ Settings). Those don't involve this backend.
      build.zig, build.zig.zon pinned to vapor **v3.1.1** tarball
      `https://github.com/senet-toolbox/vapor/archive/refs/tags/v3.1.1.tar.gz`,
      hash `vapor-3.1.1-VGoNdYnwEwAoDDctBmqdky3a-6O9NZ4_FBhGUqYWTzEV`, plus
-     vaporize if the samples need it; it's on 3.1.1 too). Move the pin with
+     vaporize if the samples need it; it's on 3.1.1 too; the template is on
+     **v3.1.2** since 2026-10-20). Move the pin with
      each vapor release, the same way metal does. Mirror assembler-chat's
      `build.zig` (wasm32-wasi, `entry = .disabled`, `rdynamic`, theme and
      config modules).
