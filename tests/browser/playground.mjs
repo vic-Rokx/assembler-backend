@@ -1,9 +1,12 @@
 // End to end: the playground's Submit builds the editor's sample on this
-// backend, and the frame runs the build; the header names the versions
+// backend, and the frame runs the build on its own origin, where it cannot
+// read the app's storage (users' API keys); the header names the versions
 // builds use; and a compile error is underlined where the compiler says.
 // Usage: SITE=<assembler-chat dir> node playground.mjs
 //   after `zig build` here and `zig build` in assembler-chat (whose default
-//   backend URL, http://localhost:8080, is where this starts the backend).
+//   backend URL, http://localhost:8080, is where this starts the backend,
+//   and whose default playground_url, http://localhost:5174, is where it
+//   serves the frame).
 // Serves the app, starts zig-out/bin/assembler-backend on :8080 with this
 // origin allowed, clicks Submit, waits for the sample to render in the
 // frame, and fails on any exception or console error in page or frame.
@@ -18,6 +21,7 @@ import { fileURLToPath } from "node:url";
 const siteDir = resolve(process.env.SITE);
 const backendExe = resolve(dirname(fileURLToPath(import.meta.url)), "../../zig-out/bin/assembler-backend");
 const backendPort = 8080;
+const frameOrigin = "http://localhost:5174";
 // A cold zig cache makes the first build take a while.
 const buildTimeoutMs = 120_000;
 
@@ -167,9 +171,17 @@ async function launch() {
 
 // ── the test ────────────────────────────────────────────────────────────────
 
+// The app and the frame, from the same files on two origins, as a host
+// would serve app.example.com and play.example.com. Both on localhost so
+// they are one site, as those two are.
 const server = createServer(serve);
-await new Promise((r) => server.listen(0, "127.0.0.1", r));
-const origin = `http://127.0.0.1:${server.address().port}`;
+await new Promise((r) => server.listen(0, "localhost", r));
+const origin = `http://localhost:${server.address().port}`;
+const frameServer = createServer(serve);
+await new Promise((resolve, reject) => {
+  frameServer.once("error", (err) => reject(new Error(`cannot serve the frame on ${frameOrigin}: ${err.message}`)));
+  frameServer.listen(Number(new URL(frameOrigin).port), "localhost", resolve);
+});
 const stopBackend = await startBackend(origin);
 const cdp = await launch();
 
@@ -186,13 +198,34 @@ const waitFor = async (expression, what, timeout) => {
   }
   throw new Error(`timed out after ${timeout} ms waiting for ${what}`);
 };
-const frameText = `(document.getElementById("playground-frame")?.contentDocument?.body?.innerText ?? "")`;
+// The frame is another origin, so the page cannot look inside it. Chrome
+// can: this runs `expression` in the frame, in a world of its own that
+// shares the frame's DOM and origin. Undefined while there is no frame.
+const inFrame = async (expression) => {
+  const { frameTree } = await cdp.send("Page.getFrameTree");
+  const frame = (frameTree.childFrames ?? []).map((c) => c.frame).find((f) => f.url.startsWith(frameOrigin));
+  if (!frame) return undefined;
+  const { executionContextId } = await cdp.send("Page.createIsolatedWorld", { frameId: frame.id, worldName: "test" });
+  const r = await cdp.send("Runtime.evaluate", { expression, contextId: executionContextId, returnByValue: true });
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception?.description ?? r.exceptionDetails.text);
+  return r.result.value;
+};
+const waitForFrame = async (expression, what, timeout) => {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) {
+    if (await inFrame(expression).catch(() => false)) return;
+    await sleep(100);
+  }
+  throw new Error(`timed out after ${timeout} ms waiting for ${what}`);
+};
+const fakeKey = "sk-ant-not-a-real-key";
 
 let failure;
 try {
   await cdp.send("Page.navigate", { url: origin + "/playground" });
   await waitFor(`document.documentElement.hasAttribute("data-vapor-ready")`, "the app", 10_000);
-  const before = await evaluate(frameText);
+  // Where Settings keeps a user's key.
+  await evaluate(`localStorage.setItem("claude_api_token", ${JSON.stringify(fakeKey)})`);
 
   const clicked = await evaluate(`(() => {
     const text = [...document.querySelectorAll("button *")].find((e) => e.textContent.trim().startsWith("Submit"));
@@ -203,14 +236,22 @@ try {
 
   const started = Date.now();
   // main_sample.zig's heading.
-  await waitFor(`${frameText}.includes("Vapor")`, "the sample to render in the frame", buildTimeoutMs);
-  const frame = await evaluate(`({
-    path: document.getElementById("playground-frame").contentWindow.location.pathname,
-    nodes: document.getElementById("playground-frame").contentDocument.querySelectorAll("#contents *").length,
+  await waitForFrame(`(document.body?.innerText ?? "").includes("Vapor")`, "the sample to render in the frame", buildTimeoutMs);
+  const frame = await inFrame(`({
+    origin: location.origin,
+    path: location.pathname,
+    nodes: document.querySelectorAll("#contents *").length,
+    ownKey: localStorage.getItem("claude_api_token"),
+    appKey: (() => { try { return window.parent.localStorage.getItem("claude_api_token"); } catch (e) { return e.name; } })(),
   })`);
-  console.log(`frame before Submit: ${JSON.stringify(before.slice(0, 80))}`);
-  console.log(`rendered in ${Date.now() - started} ms: path ${frame.path}, ${frame.nodes} elements`);
+  console.log(`rendered in ${Date.now() - started} ms at ${frame.origin}${frame.path}: ${frame.nodes} elements`);
+  if (frame.origin !== frameOrigin) throw new Error(`the frame runs on ${frame.origin}, not ${frameOrigin}`);
   if (frame.path !== "/") throw new Error(`the frame's app is at ${frame.path}, not /`);
+  // The app's key is out of the frame's reach.
+  if (frame.ownKey !== null || frame.appKey !== "SecurityError") {
+    throw new Error(`the frame can read the app's key: ${JSON.stringify(frame)}`);
+  }
+  console.log(`frame cannot read the app's storage: own ${frame.ownKey}, parent's ${frame.appKey}`);
   // Let late errors (hooks, a second render) arrive.
   await sleep(1000);
   if (cdp.problems.length) throw new Error(`page errors:\n  ${[...new Set(cdp.problems)].join("\n  ")}`);
@@ -254,9 +295,10 @@ try {
 
 cdp.close();
 server.close();
+frameServer.close();
 stopBackend();
 if (failure) {
   console.log(`FAIL ${failure.message}`);
   process.exit(1);
 }
-console.log("ok   the playground builds the sample and runs it in the frame");
+console.log("ok   the playground builds the sample and runs it in a frame on its own origin");

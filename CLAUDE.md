@@ -22,10 +22,10 @@ builds made against the template's pin (v3.1.2), so the two must stay
 compatible: move the template pin when the runtime's ABI changes. Released
 as vapor 3.1.2 (pushed, tag `v3.1.2`); the template is pinned to it.
 
-The frame is same-origin with assembler-chat and unsandboxed, so playground
-code can read the app's cookies and storage. It runs the user's own (or
-the model's) code in the user's browser, so this is self-XSS, not a hole
-for others, but a sandboxed frame on another origin would be safer.
+The frame has its own origin (assembler-chat `-Dplayground_url`, default
+`http://localhost:5174/playground.html`; in production e.g.
+`play.example.com` serving the same files): users keep API keys in the
+app's localStorage, and code running in the frame cannot read them there.
 
 Step 5 (2026-10-20): Google sign-in, with users in Postgres. reverb-auth
 (`5f11737`, `348d719`, local) installs the routes vapor's KeyStone calls
@@ -252,7 +252,8 @@ Settings). Those don't involve this backend.
   Also use `crawl.mjs` (clicks every control) and `typing.mjs` (types into
   every field). They serve the app themselves on a random port.
 - The playground: `SITE=../assembler-chat node tests/browser/playground.mjs`
-  starts this backend on :8080 itself (stop any other first), clicks
+  starts this backend on :8080 and serves the frame on :5174 itself (stop
+  any other first), checks the frame cannot read the app's storage, clicks
   Submit, and waits for the sample to render in the frame with no errors
   in page or frame; checks the header's versions; then submits code with
   an error on line 300 and requires exactly that token underlined. Needs
