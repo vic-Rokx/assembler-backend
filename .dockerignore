@@ -1,0 +1,8 @@
+# Secrets come in at run time (--env-file), never baked into the image.
+.env
+.git
+.zig-cache
+zig-out
+zig-pkg
+builds
+tests/browser

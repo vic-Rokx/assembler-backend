@@ -36,9 +36,14 @@ const mime = {
   ".json": "application/json",
 };
 
+// SITE is the assembler-chat checkout (its runtime in zig-out/bin, the
+// shell in template.html), or a folder `zig build site` assembled, served
+// as a static host would: files as they are, index.html for the rest.
+const builtSite = existsSync(join(siteDir, "index.html"));
+
 function serve(req, res) {
   let path = decodeURIComponent(new URL(req.url, "http://x").pathname);
-  if (path === "/bundle.min.js" || path === "/browser.min.js") path = "/zig-out/bin" + path;
+  if (!builtSite && (path === "/bundle.min.js" || path === "/browser.min.js")) path = "/zig-out/bin" + path;
   const file = normalize(join(siteDir, path));
   if (!file.startsWith(siteDir)) return res.writeHead(400).end();
   if (extname(path)) {
@@ -48,7 +53,7 @@ function serve(req, res) {
   }
   // Routes are client-side: every extensionless path gets the app shell.
   res.writeHead(200, { "content-type": mime[".html"] });
-  res.end(readFileSync(join(siteDir, "template.html")));
+  res.end(readFileSync(join(siteDir, builtSite ? "index.html" : "template.html")));
 }
 
 // ── backend ─────────────────────────────────────────────────────────────────
