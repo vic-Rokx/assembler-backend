@@ -45,10 +45,10 @@ pub fn main(init: std.process.Init) !void {
         return err;
     };
 
-    // Sign-in stores users, so its database must be there from the start
-    // rather than fail the first person to sign in.
-    const db: ?*pg.Pool = if (settings.signInConfigured()) blk: {
-        const uri = std.Uri.parse(settings.database_url) catch return error.InvalidDatabaseUrl;
+    // With a database, sign-in records users, so it must be there from the
+    // start rather than fail the first person to sign in.
+    const db: ?*pg.Pool = if (settings.signInConfigured() and settings.database_url != null) blk: {
+        const uri = std.Uri.parse(settings.database_url.?) catch return error.InvalidDatabaseUrl;
         const pool = pg.Pool.initUri(io, init.gpa, uri, .{ .size = 4 }) catch |err| {
             // Not the URL: it carries the password.
             std.log.err("could not open the database: {any}", .{err});
@@ -75,7 +75,7 @@ pub fn main(init: std.process.Init) !void {
         settings.host,
         settings.port,
         settings.allowed_origin,
-        if (settings.signInConfigured()) "on" else "off",
+        if (!settings.signInConfigured()) "off" else if (db != null) "on, users recorded" else "on, nothing stored",
     });
     try server.listen();
 }

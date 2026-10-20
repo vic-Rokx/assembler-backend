@@ -31,9 +31,10 @@ Step 5 (2026-10-20): Google sign-in, with users in Postgres. reverb-auth
 (`5f11737`, `348d719`, local) installs the routes vapor's KeyStone calls
 (`/exchange/google/token`, `/auth/session/{bootstrap,refresh,signout}`,
 `/auth/validate/google/session`) when `GOOGLE_CLIENT_ID`,
-`GOOGLE_CLIENT_SECRET` and `SESSION_SECRET` are set; each sign-in upserts
-`users` (`src/users.zig`, keyed by Google's `sub`) and the session names
-the row's id. assembler-chat `a320530`: the login page is the Google
+`GOOGLE_CLIENT_SECRET` and `SESSION_SECRET` are set. With `DATABASE_URL`,
+each sign-in upserts `users` (`src/users.zig`, keyed by Google's `sub`)
+and the session names the row's id; without it (the hosted exhibition)
+nothing is stored and the session names the Google account. assembler-chat `a320530`: the login page is the Google
 button, or the user and Sign out; the callback page reports the outcome.
 `/user` and `/api/users` are gone (the old form never signed anyone in).
 

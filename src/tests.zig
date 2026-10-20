@@ -826,14 +826,39 @@ test "an id token Google issued to another app is refused" {
     try testing.expectEqual(@as(i64, 0), try db.count());
 }
 
-test "a session signed with another key is signed out" {
-    const db = try TestDb.open();
-    defer db.close();
+test "without a database, sign-in still works and the session names the Google account" {
     var google: FakeGoogle = undefined;
     try google.start();
     defer google.stop();
     var h: Harness = undefined;
-    try h.startWithDb(signInSettings(&google), db.pool);
+    try h.startWithDb(signInSettings(&google), null);
+    defer h.stop();
+
+    try google.signIn("google-sub-1", "Ada", "test-client");
+    const signed_in = try exchange(&h, "4/code-1");
+    defer signed_in.deinit();
+    try signed_in.expectStatus("200");
+    const parsed = try std.json.parseFromSlice(Exchanged, testing.allocator, signed_in.body, .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    try testing.expectEqualStrings("google-sub-1", parsed.value.user.id);
+
+    const session = cookie(signed_in, "keystone_session_token") orelse return error.NoSessionCookie;
+    const cookie_header = try std.fmt.allocPrint(testing.allocator, "Cookie: keystone_session_token={s}\r\n", .{session});
+    defer testing.allocator.free(cookie_header);
+    const boot = try h.postWith("/auth/session/bootstrap", cookie_header, "");
+    defer boot.deinit();
+    const booted = try std.json.parseFromSlice(Bootstrapped, testing.allocator, boot.body, .{ .ignore_unknown_fields = true });
+    defer booted.deinit();
+    try testing.expectEqualStrings("signed_in", booted.value.state);
+    try testing.expectEqualStrings("google-sub-1", booted.value.session.?.user.id);
+}
+
+test "a session signed with another key is signed out" {
+    var google: FakeGoogle = undefined;
+    try google.start();
+    defer google.stop();
+    var h: Harness = undefined;
+    try h.startWithDb(signInSettings(&google), null);
     defer h.stop();
 
     const forged = try JWT.encode(testing.allocator, .{ .alg = .HS256, .typ = "JWT" }, .{

@@ -62,8 +62,10 @@ secure_cookies: bool = false,
 /// `api.example.com`); a frontend on another site needs `none`, which
 /// requires `SECURE_COOKIES`.
 cookie_same_site: Cookie.SameSite = .lax,
-/// The Postgres holding the `users` table. Used only with sign-in.
-database_url: []const u8 = "postgres://postgres:postgres@127.0.0.1:5432/assembler",
+/// The Postgres holding the `users` table, which records who signed in.
+/// Optional: without it sign-in still works, the session names the Google
+/// account, and nothing is stored.
+database_url: ?[]const u8 = null,
 
 pub fn fromEnv(env: *const Environ.Map) !Settings {
     var settings: Settings = .{};

@@ -57,8 +57,8 @@ const State = struct {
 var state: State = undefined;
 
 /// Starts the worker pools and adds the routes. Call `deinit` once
-/// `listen` has returned and before `server.deinit`. `db` is required
-/// when `settings.signInConfigured()`, and must already be migrated.
+/// `listen` has returned and before `server.deinit`. `db`, if given, must
+/// already be migrated; sign-in then records each user there.
 pub fn register(
     server: *Server,
     settings: Settings,
@@ -102,10 +102,10 @@ pub fn register(
 /// `/auth/session/{bootstrap,refresh,signout}` and
 /// `/auth/validate/google/session`. Sign-in and refresh wait on Google,
 /// so reverb-auth runs them on its own workers; the users upsert
-/// (`onSignIn`) runs there too.
+/// (`onSignIn`) runs there too. Without a database there is no upsert, and
+/// the session names the Google account itself.
 fn registerSignIn(server: *Server) !void {
     const settings = &state.settings;
-    std.debug.assert(state.db != null);
     try KeyStone.install(server, .{
         .clients = .{ .google = .{
             .client_id = settings.google_client_id.?,
@@ -116,7 +116,7 @@ fn registerSignIn(server: *Server) !void {
         .session_secret = settings.session_secret.?,
         .secure_cookies = settings.secure_cookies,
         .same_site = settings.cookie_same_site,
-        .on_sign_in = onSignIn,
+        .on_sign_in = if (state.db != null) onSignIn else null,
     }, state.gpa, state.io);
 }
 
