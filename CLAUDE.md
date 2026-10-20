@@ -27,8 +27,11 @@ Decisions and known gaps:
 - Reverb runs handlers on its single event loop with no way to answer from
   another thread, so a build (~5 s) or a Claude call (up to minutes)
   blocks every other request. That also serializes builds. The fix,
-  deferred responses on worker pools, is planned in `../loom/context.md`
-  and `../reverb/context.md` §8 (2026-10-20).
+  deferred responses on worker pools, is built in Loom `8d791ac` (pushed)
+  and reverb `7791913` (local, not pushed); see `../reverb/context.md` §8.
+  Still to do here: push reverb, pin it, and move `buildWasm`, `/chat` and
+  `/api/vertex` onto `ctx.deferReply()` + `reverb.Workers` (the last
+  subsection of §8).
 - No memory cap on builds: macOS cannot set one per process. Cap it where
   the backend is deployed (cgroup/container). Builds have a wall-clock
   deadline that kills the `zig build` process group.
