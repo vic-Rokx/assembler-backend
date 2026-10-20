@@ -26,8 +26,9 @@ Decisions and known gaps:
   `application/wasm`). Old builds are swept after an hour.
 - Reverb runs handlers on its single event loop with no way to answer from
   another thread, so a build (~5 s) or a Claude call (up to minutes)
-  blocks every other request. That also serializes builds. Fixing it needs
-  deferred responses in reverb.
+  blocks every other request. That also serializes builds. The fix,
+  deferred responses on worker pools, is planned in `../loom/context.md`
+  and `../reverb/context.md` §8 (2026-10-20).
 - No memory cap on builds: macOS cannot set one per process. Cap it where
   the backend is deployed (cgroup/container). Builds have a wall-clock
   deadline that kills the `zig build` process group.
