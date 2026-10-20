@@ -47,11 +47,12 @@ button, or the user and Sign out; the callback page reports the outcome.
   directory (`KEY=value` lines); the real environment wins over it. The
   local one holds the Google client, `SESSION_SECRET` and a `DATABASE_URL`
   for the `assembler-pg` container. Never print its values.
-- Never signed in with real Google: there is no client secret here. The
-  frontend's client id is `403015953227-…`; its secret goes in
-  `GOOGLE_CLIENT_SECRET`, and `OAUTH_REDIRECT_URI` must be listed for that
-  client in Google Cloud. A made-up client got Google's real
-  `invalid_client`, and the backend answered 401.
+- Verified with real Google on 2026-10-20: the user signed in through
+  `http://localhost:5173/auth/login` (assembler-chat served on :5173, this
+  backend on :8080 with `.env`), which created `users` row 1. The client
+  is `403015953227-…`; `http://localhost:5173/auth/callback` is its
+  registered redirect URI. Other origins need their own entry in Google
+  Cloud and `OAUTH_REDIRECT_URI`.
 - Sign-in runs on the event loop (a Google call, a few hundred ms):
   reverb's deferred replies cannot set cookies after the handler returns.
   The fix is a `Reply` that can carry cookies.
