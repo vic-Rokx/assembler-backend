@@ -33,11 +33,15 @@ const Harness = struct {
             .io = testing.io,
             .template_path = playground_template,
             .builds_path = try h.builds.dir.realPathFileAlloc(testing.io, ".", h.arena.allocator()),
+            .zig_exe = settings.zig_exe,
         };
 
         try h.server.new(.{ .port = 0 }, h.arena.allocator());
         errdefer h.server.deinit();
-        try app.register(&h.server, settings, testing.io, builder);
+        // Leak-checks every reply.
+        h.server.reply_allocator = testing.allocator;
+        try app.register(&h.server, settings, testing.io, testing.allocator, builder);
+        errdefer app.deinit();
         try h.server.bindListener();
         h.port = try h.server.boundPort();
         h.thread = try std.Thread.spawn(.{}, serve, .{&h.server});
@@ -50,6 +54,7 @@ const Harness = struct {
     fn stop(h: *Harness) void {
         h.server.stop();
         h.thread.join();
+        app.deinit();
         h.server.deinit();
         h.builds.cleanup();
         h.arena.deinit();
@@ -58,42 +63,41 @@ const Harness = struct {
     /// Sends one request and reads one response, framed by its
     /// Content-Length. Caller frees with `Response.deinit`.
     fn roundTrip(h: *Harness, request: []const u8) !Response {
+        const stream = try h.send(request);
+        defer stream.close(testing.io);
+        return receive(stream);
+    }
+
+    /// Sends one request on a new connection and leaves the response
+    /// unread, for tests that hold several requests open at once. Caller
+    /// closes the stream.
+    fn send(h: *Harness, request: []const u8) !std.Io.net.Stream {
         const io = testing.io;
         const address: std.Io.net.IpAddress = .{ .ip4 = .loopback(h.port) };
         const stream = try address.connect(io, .{ .mode = .stream });
-        defer stream.close(io);
+        errdefer stream.close(io);
 
         var write_buf: [1024]u8 = undefined;
         var writer = stream.writer(io, &write_buf);
         try writer.interface.writeAll(request);
         try writer.interface.flush();
-
-        var read_buf: [64 * 1024]u8 = undefined;
-        var reader = stream.reader(io, &read_buf);
-        var head: std.ArrayList(u8) = .empty;
-        defer head.deinit(testing.allocator);
-        while (!std.mem.endsWith(u8, head.items, "\r\n\r\n")) {
-            try head.append(testing.allocator, try reader.interface.takeByte());
-        }
-
-        const length_header = "Content-Length: ";
-        const at = std.mem.indexOf(u8, head.items, length_header) orelse return error.NoContentLength;
-        const length_end = std.mem.indexOfPos(u8, head.items, at, "\r\n").?;
-        const length = try std.fmt.parseInt(usize, head.items[at + length_header.len .. length_end], 10);
-        return .{
-            .head = try head.toOwnedSlice(testing.allocator),
-            .body = try reader.interface.readAlloc(testing.allocator, length),
-        };
+        return stream;
     }
 
     fn post(h: *Harness, path: []const u8, body: []const u8) !Response {
+        const stream = try h.sendPost(path, body);
+        defer stream.close(testing.io);
+        return receive(stream);
+    }
+
+    fn sendPost(h: *Harness, path: []const u8, body: []const u8) !std.Io.net.Stream {
         const request = try std.fmt.allocPrint(
             testing.allocator,
             "POST {s} HTTP/1.1\r\nHost: x\r\nOrigin: " ++ origin ++ "\r\nContent-Length: {d}\r\n\r\n{s}",
             .{ path, body.len, body },
         );
         defer testing.allocator.free(request);
-        return h.roundTrip(request);
+        return h.send(request);
     }
 
     fn get(h: *Harness, path: []const u8) !Response {
@@ -102,6 +106,27 @@ const Harness = struct {
         return h.roundTrip(request);
     }
 };
+
+/// Reads one response, framed by its Content-Length. Caller frees with
+/// `Response.deinit`.
+fn receive(stream: std.Io.net.Stream) !Response {
+    var read_buf: [64 * 1024]u8 = undefined;
+    var reader = stream.reader(testing.io, &read_buf);
+    var head: std.ArrayList(u8) = .empty;
+    defer head.deinit(testing.allocator);
+    while (!std.mem.endsWith(u8, head.items, "\r\n\r\n")) {
+        try head.append(testing.allocator, try reader.interface.takeByte());
+    }
+
+    const length_header = "Content-Length: ";
+    const at = std.mem.indexOf(u8, head.items, length_header) orelse return error.NoContentLength;
+    const length_end = std.mem.indexOfPos(u8, head.items, at, "\r\n").?;
+    const length = try std.fmt.parseInt(usize, head.items[at + length_header.len .. length_end], 10);
+    return .{
+        .head = try head.toOwnedSlice(testing.allocator),
+        .body = try reader.interface.readAlloc(testing.allocator, length),
+    };
+}
 
 const Response = struct {
     head: []u8,
@@ -255,6 +280,127 @@ test "a build past its deadline is stopped and cleaned up" {
     var it = builds.dir.iterate();
     while (try it.next(testing.io)) |entry| {
         try testing.expectEqualStrings(".cache", entry.name);
+    }
+}
+
+/// Stands in for `zig build` (as `Settings.zig_exe`) and holds every build
+/// until the test opens the gate, so a test can act while builds are
+/// running. A build that sees the gate open fails with "error: the gate
+/// opened"; one that waits five seconds without it gives up with "error:
+/// the gate never opened", so a server that waits on its builds fails the
+/// test instead of hanging it.
+const Gate = struct {
+    dir: testing.TmpDir,
+    path: [:0]u8,
+    zig_exe: []u8,
+
+    fn init(g: *Gate) !void {
+        g.dir = testing.tmpDir(.{});
+        errdefer g.dir.cleanup();
+        g.path = try g.dir.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
+        errdefer testing.allocator.free(g.path);
+        g.zig_exe = try std.fs.path.join(testing.allocator, &.{ g.path, "zig" });
+        errdefer testing.allocator.free(g.zig_exe);
+
+        const script = try std.fmt.allocPrint(testing.allocator,
+            \\#!/bin/sh
+            \\touch '{0s}/started'
+            \\i=0
+            \\while [ ! -e '{0s}/gate' ]; do
+            \\  i=$((i + 1))
+            \\  if [ $i -gt 100 ]; then echo 'error: the gate never opened' >&2; exit 1; fi
+            \\  sleep 0.05
+            \\done
+            \\echo 'error: the gate opened' >&2
+            \\exit 1
+            \\
+        , .{g.path});
+        defer testing.allocator.free(script);
+        try g.dir.dir.writeFile(testing.io, .{
+            .sub_path = "zig",
+            .data = script,
+            .flags = .{ .permissions = .executable_file },
+        });
+    }
+
+    fn deinit(g: *Gate) void {
+        testing.allocator.free(g.zig_exe);
+        testing.allocator.free(g.path);
+        g.dir.cleanup();
+    }
+
+    /// Waits until some build has started.
+    fn waitStarted(g: *Gate) !void {
+        for (0..500) |_| {
+            if (g.dir.dir.access(testing.io, "started", .{})) |_| return else |_| {}
+            try testing.io.sleep(.fromMilliseconds(10), .awake);
+        }
+        return error.BuildNeverStarted;
+    }
+
+    fn open(g: *Gate) !void {
+        try g.dir.dir.writeFile(testing.io, .{ .sub_path = "gate", .data = "" });
+    }
+};
+
+test "a running build does not hold up other requests" {
+    var gate: Gate = undefined;
+    try gate.init();
+    defer gate.deinit();
+    var h: Harness = undefined;
+    try h.startWith(.{ .allowed_origin = origin, .zig_exe = gate.zig_exe });
+    defer h.stop();
+
+    const build = try h.sendPost("/api/wasm/build", "export fn init() void {}\n");
+    defer build.close(testing.io);
+    try gate.waitStarted();
+
+    // Answered while the build is still held at the gate.
+    const ping = try h.get("/");
+    defer ping.deinit();
+    try ping.expectStatus("200");
+
+    try gate.open();
+    const built = try receive(build);
+    defer built.deinit();
+    try built.expectStatus("500");
+    try testing.expectEqualStrings("error: the gate opened", built.body);
+}
+
+test "builds past the pool wait their turn, and past the queue answer 503" {
+    var gate: Gate = undefined;
+    try gate.init();
+    defer gate.deinit();
+    var h: Harness = undefined;
+    try h.startWith(.{
+        .allowed_origin = origin,
+        .zig_exe = gate.zig_exe,
+        .build_threads = 1,
+        .build_queue = 1,
+    });
+    defer h.stop();
+
+    const source = "export fn init() void {}\n";
+    const running = try h.sendPost("/api/wasm/build", source);
+    defer running.close(testing.io);
+    try gate.waitStarted();
+    const queued = try h.sendPost("/api/wasm/build", source);
+    defer queued.close(testing.io);
+    // The queued build reached the server before this request, and the
+    // loop serves every connection that is ready before it waits again,
+    // so once this is answered the queued build has been submitted.
+    const ping = try h.get("/");
+    ping.deinit();
+
+    const refused = try h.post("/api/wasm/build", source);
+    defer refused.deinit();
+    try refused.expectStatus("503");
+
+    try gate.open();
+    for ([_]std.Io.net.Stream{ running, queued }) |stream| {
+        const built = try receive(stream);
+        defer built.deinit();
+        try testing.expectEqualStrings("error: the gate opened", built.body);
     }
 }
 

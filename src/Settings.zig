@@ -20,6 +20,15 @@ playground_template: []const u8 = "playground_template",
 builds_dir: []const u8 = "builds",
 zig_exe: []const u8 = "zig",
 build_timeout_seconds: u32 = 60,
+/// Builds that run at once. Each is a `zig build` that can keep several
+/// cores busy, so this is the cap on concurrent builds.
+build_threads: u16 = 2,
+/// Builds that may wait for a free thread. Past this a build answers 503.
+build_queue: u16 = 8,
+/// Model calls in flight at once. They wait on the network, not the CPU.
+chat_threads: u16 = 8,
+/// Model calls that may wait for a free thread. Past this a chat answers 503.
+chat_queue: u16 = 32,
 /// `POST /chat` answers 503 without it.
 anthropic_api_key: ?[]const u8 = null,
 claude_model: []const u8 = "claude-opus-5-5",
@@ -45,6 +54,10 @@ pub fn fromEnv(env: *const Environ.Map) !Settings {
     if (env.get("BUILD_TIMEOUT_SECONDS")) |seconds| {
         settings.build_timeout_seconds = std.fmt.parseInt(u32, seconds, 10) catch return error.InvalidBuildTimeout;
     }
+    settings.build_threads = try count(env, "BUILD_THREADS", settings.build_threads);
+    settings.build_queue = try count(env, "BUILD_QUEUE", settings.build_queue);
+    settings.chat_threads = try count(env, "CHAT_THREADS", settings.chat_threads);
+    settings.chat_queue = try count(env, "CHAT_QUEUE", settings.chat_queue);
     if (env.get("ANTHROPIC_API_KEY")) |key| settings.anthropic_api_key = key;
     if (env.get("CLAUDE_MODEL")) |model| settings.claude_model = model;
     if (env.get("VERTEX_PROJECT_ID")) |id| settings.vertex_project_id = id;
@@ -52,6 +65,15 @@ pub fn fromEnv(env: *const Environ.Map) !Settings {
     if (env.get("VERTEX_REGION")) |region| settings.vertex_region = region;
     if (env.get("VERTEX_MODEL")) |model| settings.vertex_model = model;
     return settings;
+}
+
+/// A pool size from `name`, or `default` if it is unset. Zero is refused:
+/// a pool without threads or queue would answer every request with 503.
+fn count(env: *const Environ.Map, name: []const u8, default: u16) !u16 {
+    const text = env.get(name) orelse return default;
+    const n = std.fmt.parseInt(u16, text, 10) catch return error.InvalidPoolSize;
+    if (n == 0) return error.InvalidPoolSize;
+    return n;
 }
 
 test "defaults when the environment is empty" {
@@ -85,4 +107,14 @@ test "rejects a port that is not a u16" {
     try env.put("PORT", "70000");
 
     try std.testing.expectError(error.InvalidPort, fromEnv(&env));
+}
+
+test "pool sizes are read and must be positive" {
+    var env = Environ.Map.init(std.testing.allocator);
+    defer env.deinit();
+    try env.put("BUILD_THREADS", "4");
+    try std.testing.expectEqual(@as(u16, 4), (try fromEnv(&env)).build_threads);
+
+    try env.put("CHAT_QUEUE", "0");
+    try std.testing.expectError(error.InvalidPoolSize, fromEnv(&env));
 }

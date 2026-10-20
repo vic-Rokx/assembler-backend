@@ -1,5 +1,11 @@
 //! Routes and middleware for the assembler-chat backend.
+//!
+//! Builds and model calls take seconds to minutes, so their handlers defer
+//! the reply and hand the work to a worker pool; the event loop keeps
+//! answering everyone else. One pool per kind of work, so a burst of chats
+//! cannot keep builds waiting, or the other way round.
 const std = @import("std");
+const Allocator = std.mem.Allocator;
 const reverb = @import("reverb");
 const Context = reverb.Context;
 const Settings = @import("Settings.zig");
@@ -14,21 +20,51 @@ pub const Config = struct {
     /// well under the 8 MB main-thread stack. Playground sources and chat
     /// prompts are a few KB.
     max_body_size: usize = 1024 * 1024,
+    /// How long a deferred request may wait for its reply. A non-streamed
+    /// answer of `max_tokens` can take longer than reverb's five-minute
+    /// default.
+    reply_timeout_ms: i64 = 10 * 60 * 1000,
 };
 
 pub const Server = reverb.Server(Config);
+
+const content_type = "text/plain; charset=utf-8";
+
+const BuildJob = struct {
+    reply: *reverb.Reply,
+    /// Owned by the job; `runBuild` frees it.
+    source: []u8,
+};
 
 /// What the handlers need. Reverb handlers take only a `Context`, so this
 /// is set once by `register`.
 const State = struct {
     settings: Settings,
     io: std.Io,
+    /// Threadsafe: jobs are allocated on the loop thread and freed on a
+    /// worker.
+    gpa: Allocator,
     builder: WasmBuilder,
+    builds: reverb.Workers(BuildJob, runBuild),
+    chats: reverb.Workers(chat.Job, runChat),
 };
 var state: State = undefined;
 
-pub fn register(server: *Server, settings: Settings, io: std.Io, builder: WasmBuilder) !void {
-    state = .{ .settings = settings, .io = io, .builder = builder };
+/// Starts the worker pools and adds the routes. Call `deinit` once
+/// `listen` has returned and before `server.deinit`.
+pub fn register(server: *Server, settings: Settings, io: std.Io, gpa: Allocator, builder: WasmBuilder) !void {
+    state = .{
+        .settings = settings,
+        .io = io,
+        .gpa = gpa,
+        .builder = builder,
+        .builds = undefined,
+        .chats = undefined,
+    };
+    try state.builds.init(gpa, io, .{ .threads = settings.build_threads, .queue = settings.build_queue });
+    errdefer state.builds.deinit();
+    try state.chats.init(gpa, io, .{ .threads = settings.chat_threads, .queue = settings.chat_queue });
+    errdefer state.chats.deinit();
 
     try server.useCors(.{ .cors_headers = .{
         .origin = .{ .override = settings.allowed_origin },
@@ -42,31 +78,72 @@ pub fn register(server: *Server, settings: Settings, io: std.Io, builder: WasmBu
     try server.get("/api/wasm/build/:file", getWasm, &.{});
 }
 
+/// Stops the pools. Jobs already queued still run and send their replies,
+/// so this waits for them.
+pub fn deinit() void {
+    state.builds.deinit();
+    state.chats.deinit();
+}
+
 fn ping(ctx: *Context) !void {
     try ctx.STRING("SUCCESS");
 }
 
 fn postChat(ctx: *Context) !void {
-    try chat.anthropic(ctx, &state.settings);
+    try deferChat(ctx, .anthropic);
 }
 
 fn postVertex(ctx: *Context) !void {
-    try chat.googleVertex(ctx, &state.settings);
+    try deferChat(ctx, .vertex);
 }
 
-/// The body is the playground's `main.zig`. Answers 200 with the build id,
-/// or 500 with the compiler's `file:line:col: error: ...` lines.
+/// Answers what it can at once (no credentials, no query), and hands the
+/// model call to a chat worker.
+fn deferChat(ctx: *Context, provider: chat.Provider) !void {
+    if (chat.unconfigured(&state.settings, provider)) |reason| return ctx.ERROR(503, reason);
+    const query = chat.readQuery(ctx) orelse return ctx.ERROR(400, "expected JSON {\"query\": \"...\"}");
+
+    const owned = try state.gpa.dupe(u8, query);
+    errdefer state.gpa.free(owned);
+    const reply = try ctx.deferReply();
+    state.chats.submit(.{ .reply = reply, .provider = provider, .query = owned }) catch {
+        state.gpa.free(owned);
+        reply.send(503, content_type, "too many chats are in progress; try again shortly");
+    };
+}
+
+fn runChat(job: chat.Job) void {
+    chat.answer(state.gpa, &state.settings, job);
+}
+
+/// The body is the playground's `main.zig`, built on a build worker.
 fn buildWasm(ctx: *Context) !void {
     const source = ctx.body();
     if (std.mem.trim(u8, source, " \t\r\n").len == 0) return ctx.ERROR(400, "error: empty source");
 
-    const outcome = state.builder.build(ctx.requestAllocator(), source) catch |err| {
+    const owned = try state.gpa.dupe(u8, source);
+    errdefer state.gpa.free(owned);
+    const reply = try ctx.deferReply();
+    state.builds.submit(.{ .reply = reply, .source = owned }) catch {
+        state.gpa.free(owned);
+        reply.send(503, content_type, "error: too many builds are running; try again shortly");
+    };
+}
+
+/// Answers 200 with the build id, or 500 with the compiler's
+/// `file:line:col: error: ...` lines.
+fn runBuild(job: BuildJob) void {
+    defer state.gpa.free(job.source);
+    const outcome = state.builder.build(state.gpa, job.source) catch |err| {
         std.log.err("wasm build: {any}", .{err});
-        return ctx.ERROR(500, "error: the build server failed");
+        return job.reply.send(500, content_type, "error: the build server failed");
     };
     switch (outcome) {
-        .built => |id| try ctx.STRING(&id),
-        .failed => |errors| try ctx.ERROR(500, errors),
+        .built => |id| job.reply.send(200, content_type, &id),
+        .failed => |errors| {
+            defer state.gpa.free(errors);
+            job.reply.send(500, content_type, errors);
+        },
     }
 }
 

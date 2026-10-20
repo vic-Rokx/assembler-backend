@@ -10,7 +10,7 @@ Created on 2026-10-19. Plan steps 1-3 are built (see "Status" below).
 ## Status (2026-10-19)
 
 Done: steps 1, 2 and 3, and assembler-chat `5998ffc` (wasm URL carries the
-build id; the dead 5 s `call()` is gone). `zig build test` (18 tests, ~45 s)
+build id; the dead 5 s `call()` is gone). `zig build test` (21 tests, ~50 s)
 drives the real routes over a socket and runs real playground builds.
 
 Layout: `src/main.zig` (env, paths), `src/app.zig` (routes), `src/chat.zig`,
@@ -24,14 +24,18 @@ Decisions and known gaps:
 - `POST /api/wasm/build` answers 200 with a 16-hex-char id; the wasm is
   `GET /api/wasm/build/<id>.wasm` (the extension makes reverb send
   `application/wasm`). Old builds are swept after an hour.
-- Reverb runs handlers on its single event loop with no way to answer from
-  another thread, so a build (~5 s) or a Claude call (up to minutes)
-  blocks every other request. That also serializes builds. The fix,
-  deferred responses on worker pools, is built in Loom `8d791ac` (pushed)
-  and reverb `7791913` (local, not pushed); see `../reverb/context.md` §8.
-  Still to do here: push reverb, pin it, and move `buildWasm`, `/chat` and
-  `/api/vertex` onto `ctx.deferReply()` + `reverb.Workers` (the last
-  subsection of §8).
+- Builds and model calls run on worker pools (`reverb.Workers`) behind
+  `ctx.deferReply()`, so the loop keeps answering while they run (2026-10-20).
+  Builds: `BUILD_THREADS` (2, the concurrency cap) and `BUILD_QUEUE` (8);
+  chats: `CHAT_THREADS` (8) and `CHAT_QUEUE` (32). A full queue answers
+  503. Requests may wait 10 min for a reply (`Config.reply_timeout_ms`).
+  Shutdown waits for queued jobs to finish, which can take a while with
+  builds queued.
+- **reverb is a path dependency (`../reverb`)** until its deferred-reply
+  commit (`7791913`) is pushed; then pin it by URL and hash again. Loom
+  `8d791ac` is pushed and pinned by reverb.
+- The deferred chat path was never run against a model: claude-zig's base
+  URL is fixed, so tests cannot fake the API, and there is no key here.
 - No memory cap on builds: macOS cannot set one per process. Cap it where
   the backend is deployed (cgroup/container). Builds have a wall-clock
   deadline that kills the `zig build` process group.

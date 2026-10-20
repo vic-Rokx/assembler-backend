@@ -29,9 +29,13 @@ pub fn main(init: std.process.Init) !void {
     var server: app.Server = undefined;
     try server.new(.{ .host = settings.host, .port = settings.port }, arena);
     defer server.deinit();
+    // Leak-checked in Debug, and threadsafe as replies need.
+    server.reply_allocator = init.gpa;
 
     try server.installSignalHandlers();
-    try app.register(&server, settings, io, builder);
+    try app.register(&server, settings, io, init.gpa, builder);
+    // Before `server.deinit`: jobs still queued send their replies.
+    defer app.deinit();
 
     std.log.info("listening on {s}:{d}, CORS origin {s}", .{ settings.host, settings.port, settings.allowed_origin });
     try server.listen();
