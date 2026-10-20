@@ -4,9 +4,10 @@
     .fingerprint = 0x7431a4c01f4a36ca,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
-        // Deferred replies (7791913) are not pushed yet; pin by URL once
-        // they are.
-        .reverb = .{ .path = "../reverb" },
+        .reverb = .{
+            .url = "git+https://github.com/senet-toolbox/reverb#7791913363101e368b6fb73046b3cdfb957ce855",
+            .hash = "reverb-0.0.0-Gtb4ydiBDADfbEkBXtyuGrM5UdqAKM04zcGVSFfiUpGP",
+        },
         // Private repo, so not fetchable by URL; the sibling checkout
         // (5396745 when added).
         .claude = .{ .path = "../claude-zig" },

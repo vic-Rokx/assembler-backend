@@ -31,9 +31,8 @@ Decisions and known gaps:
   503. Requests may wait 10 min for a reply (`Config.reply_timeout_ms`).
   Shutdown waits for queued jobs to finish, which can take a while with
   builds queued.
-- **reverb is a path dependency (`../reverb`)** until its deferred-reply
-  commit (`7791913`) is pushed; then pin it by URL and hash again. Loom
-  `8d791ac` is pushed and pinned by reverb.
+- reverb is pinned at `7791913` (deferred replies), which pins Loom
+  `8d791ac`. Both are pushed.
 - The deferred chat path was never run against a model: claude-zig's base
   URL is fixed, so tests cannot fake the API, and there is no key here.
 - No memory cap on builds: macOS cannot set one per process. Cap it where
@@ -80,7 +79,7 @@ after the snapshot.
 
 | Package | Commit | Use |
 |---|---|---|
-| reverb | `57375b7e90e023d0eb32c1fdd9c62050aa0c876c` | HTTP server. Public. metal pins it as `git+https://github.com/senet-toolbox/reverb#57375b7…` with hash `reverb-0.0.0-Gtb4ydEZDABhHUdfbkqKWZIlVekhd9wSxdv2vzqlZUBM` (copy from `../metal/build.zig.zon`). README has the `Server(Config)` quickstart. |
+| reverb | `7791913363101e368b6fb73046b3cdfb957ce855` | HTTP server. Public. Pinned here by URL and hash (see `build.zig.zon`); metal still pins the older `57375b7`. README has the `Server(Config)` quickstart and "Replying later". |
 | claude-zig | `5396745` | Claude + Vertex clients (modules `claude`, `vertex`). Reads no env itself: `init.environ_map.get("ANTHROPIC_API_KEY")` in `main` (see `examples/claude_demo.zig`). It no longer injects any system prompt; this backend must send its own. |
 | reverb-auth | `a47c0e5` | OAuth (Google, GitHub), sessions, JWT. Its README says reverb is private; that's stale (reverb is public now). It uses a path dep on `../reverb`. |
 | stripe-zig | `2f20771` | Stripe client, for `/checkout` (later). |
