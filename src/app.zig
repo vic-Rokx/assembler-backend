@@ -11,6 +11,9 @@ const Context = reverb.Context;
 const Settings = @import("Settings.zig");
 const WasmBuilder = @import("WasmBuilder.zig");
 const chat = @import("chat.zig");
+const users = @import("users.zig");
+const KeyStone = @import("reverb_auth").KeyStone;
+const pg = @import("pg_orm").pg;
 
 pub const Config = struct {
     host: []const u8 = "127.0.0.1",
@@ -45,19 +48,23 @@ const State = struct {
     /// worker.
     gpa: Allocator,
     builder: WasmBuilder,
+    /// The users table's database; null when sign-in is off.
+    db: ?*pg.Pool,
     builds: reverb.Workers(BuildJob, runBuild),
     chats: reverb.Workers(chat.Job, runChat),
 };
 var state: State = undefined;
 
 /// Starts the worker pools and adds the routes. Call `deinit` once
-/// `listen` has returned and before `server.deinit`.
-pub fn register(server: *Server, settings: Settings, io: std.Io, gpa: Allocator, builder: WasmBuilder) !void {
+/// `listen` has returned and before `server.deinit`. `db` is required
+/// when `settings.signInConfigured()`, and must already be migrated.
+pub fn register(server: *Server, settings: Settings, io: std.Io, gpa: Allocator, builder: WasmBuilder, db: ?*pg.Pool) !void {
     state = .{
         .settings = settings,
         .io = io,
         .gpa = gpa,
         .builder = builder,
+        .db = db,
         .builds = undefined,
         .chats = undefined,
     };
@@ -76,6 +83,35 @@ pub fn register(server: *Server, settings: Settings, io: std.Io, gpa: Allocator,
     try server.post("/api/vertex", postVertex, &.{});
     try server.post("/api/wasm/build", buildWasm, &.{});
     try server.get("/api/wasm/build/:file", getWasm, &.{});
+
+    if (settings.signInConfigured()) try registerSignIn(server);
+}
+
+/// reverb-auth's routes for vapor's KeyStone: `/exchange/google/token`,
+/// `/auth/session/{bootstrap,refresh,signout}` and
+/// `/auth/validate/google/session`.
+///
+/// These run on the event loop. A sign-in or refresh calls Google, which
+/// takes a few hundred milliseconds; reverb's deferred replies cannot set
+/// cookies after the handler returns, which these must.
+fn registerSignIn(server: *Server) !void {
+    const settings = &state.settings;
+    std.debug.assert(state.db != null);
+    try KeyStone.install(server, .{
+        .clients = .{ .google = .{
+            .client_id = settings.google_client_id.?,
+            .client_secret = settings.google_client_secret.?,
+            .redirect_uri = settings.oauth_redirect_uri,
+            .token_url = settings.google_token_url,
+        } },
+        .session_secret = settings.session_secret.?,
+        .secure_cookies = settings.secure_cookies,
+        .on_sign_in = onSignIn,
+    }, state.gpa);
+}
+
+fn onSignIn(allocator: Allocator, user: KeyStone.SignedIn) anyerror![]const u8 {
+    return users.upsert(state.db.?, allocator, user);
 }
 
 /// Stops the pools. Jobs already queued still run and send their replies,

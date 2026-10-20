@@ -13,10 +13,21 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    // Pins the same reverb as this package, so both share its `Context`.
+    const reverb_auth = b.dependency("reverb_auth", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const pg_orm = b.dependency("pg_orm", .{
+        .target = target,
+        .optimize = optimize,
+    });
     const imports: []const std.Build.Module.Import = &.{
         .{ .name = "reverb", .module = reverb.module("reverb") },
         .{ .name = "claude", .module = claude.module("claude") },
         .{ .name = "vertex", .module = claude.module("vertex") },
+        .{ .name = "reverb_auth", .module = reverb_auth.module("reverb_auth") },
+        .{ .name = "pg_orm", .module = pg_orm.module("pg_orm") },
     };
 
     const exe_mod = b.createModule(.{

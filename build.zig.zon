@@ -11,6 +11,10 @@
         // Private repo, so not fetchable by URL; the sibling checkout
         // (5396745 when added).
         .claude = .{ .path = "../claude-zig" },
+        // Private repos too: Google sign-in and sessions, and the users
+        // table.
+        .reverb_auth = .{ .path = "../reverb-auth" },
+        .pg_orm = .{ .path = "../pg-orm" },
     },
     .paths = .{
         "build.zig",

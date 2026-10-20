@@ -2,6 +2,8 @@ const std = @import("std");
 const app = @import("app.zig");
 const Settings = @import("Settings.zig");
 const WasmBuilder = @import("WasmBuilder.zig");
+const users = @import("users.zig");
+const pg = @import("pg_orm").pg;
 
 pub fn main(init: std.process.Init) !void {
     const io = init.io;
@@ -26,6 +28,21 @@ pub fn main(init: std.process.Init) !void {
         .timeout = .fromSeconds(settings.build_timeout_seconds),
     };
 
+    // Sign-in stores users, so its database must be there from the start
+    // rather than fail the first person to sign in.
+    const db: ?*pg.Pool = if (settings.signInConfigured()) blk: {
+        const uri = std.Uri.parse(settings.database_url) catch return error.InvalidDatabaseUrl;
+        const pool = pg.Pool.initUri(io, init.gpa, uri, .{ .size = 4 }) catch |err| {
+            // Not the URL: it carries the password.
+            std.log.err("could not open the database: {any}", .{err});
+            return err;
+        };
+        errdefer pool.deinit();
+        try users.migrate(pool);
+        break :blk pool;
+    } else null;
+    defer if (db) |pool| pool.deinit();
+
     var server: app.Server = undefined;
     try server.new(.{ .host = settings.host, .port = settings.port }, arena);
     defer server.deinit();
@@ -33,11 +50,16 @@ pub fn main(init: std.process.Init) !void {
     server.reply_allocator = init.gpa;
 
     try server.installSignalHandlers();
-    try app.register(&server, settings, io, init.gpa, builder);
+    try app.register(&server, settings, io, init.gpa, builder, db);
     // Before `server.deinit`: jobs still queued send their replies.
     defer app.deinit();
 
-    std.log.info("listening on {s}:{d}, CORS origin {s}", .{ settings.host, settings.port, settings.allowed_origin });
+    std.log.info("listening on {s}:{d}, CORS origin {s}, sign-in {s}", .{
+        settings.host,
+        settings.port,
+        settings.allowed_origin,
+        if (settings.signInConfigured()) "on" else "off",
+    });
     try server.listen();
 }
 
@@ -45,5 +67,6 @@ test {
     _ = Settings;
     _ = WasmBuilder;
     _ = @import("chat.zig");
+    _ = users;
     _ = @import("tests.zig");
 }
