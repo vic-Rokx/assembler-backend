@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  ZIG_VERSION: 0.16.0
+  TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/assembler_test
+
+jobs:
+  test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: assembler_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      # pg.zig translates OpenSSL's headers.
+      - run: sudo apt-get install -y --no-install-recommends libssl-dev
+      - run: zig fmt --check src build.zig playground_template
+      - run: zig build
+      # Real playground builds and the sign-in routes, against Postgres.
+      - run: zig build test --summary all
+
+  end-to-end:
+    name: End to end (headless Chrome)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: assembler_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: vic-Rokx/assembler-chat
+          path: assembler-chat
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: ${{ env.ZIG_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: sudo apt-get install -y --no-install-recommends libssl-dev
+      - run: zig build
+      - run: zig build site -Doptimize=ReleaseSmall
+        working-directory: assembler-chat
+      - run: node tests/browser/playground.mjs
+        env:
+          SITE: assembler-chat/zig-out/site
+      - run: node tests/browser/signin.mjs
+        env:
+          SITE: assembler-chat/zig-out/site
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t assembler-backend .
+      - name: The container answers and builds
+        run: |
+          docker run -d --name backend -p 8080:8080 assembler-backend
+          for i in $(seq 1 30); do curl -fs localhost:8080/ && break; sleep 1; done
+          curl -fs localhost:8080/api/wasm/versions
+          printf 'const Vapor = @import("vapor");\nexport fn init() void {\n    Vapor.init(.{});\n}\n' > main.zig
+          id=$(curl -fs --data-binary @main.zig localhost:8080/api/wasm/build)
+          curl -fs -o /dev/null -w '%{content_type}\n' "localhost:8080/api/wasm/build/$id.wasm" | grep -q application/wasm
