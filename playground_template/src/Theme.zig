@@ -23,3 +23,14 @@ pub const Dark = Colors{
     .surface = .hex("#1F1F1F"),
     .border = .hex("#333333"),
 };
+
+pub const Mode = enum(u8) { light, dark };
+
+pub var mode: Mode = .light;
+
+/// Called by vapor's runtime at startup when the page's saved theme is
+/// dark. The playground frame shares assembler-chat's origin, so it
+/// follows the app's theme.
+pub export fn setTheme(new_mode: Mode) void {
+    mode = new_mode;
+}

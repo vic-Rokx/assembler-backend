@@ -5,13 +5,27 @@ vapor app with three tools: an LLM chat that writes vapor code, a playground
 that compiles Zig/vapor code to wasm and runs it in an iframe, and a planner.
 Built on **reverb** (the user's HTTP server, `~/Desktop/Zig/reverb`).
 
-Created on 2026-10-19. Plan steps 1-3 are built (see "Status" below).
+Created on 2026-10-19. Plan steps 1-4 are built (see "Status" below).
 
 ## Status (2026-10-19)
 
 Done: steps 1, 2 and 3, and assembler-chat `5998ffc` (wasm URL carries the
 build id; the dead 5 s `call()` is gone). `zig build test` (21 tests, ~50 s)
 drives the real routes over a socket and runs real playground builds.
+
+Step 4 (2026-10-20): vapor `58b5944` adds `<html data-vapor-boot="playground">`,
+the frame side of `Vapor.Wasm.runPlaygroundWasm`, and assembler-chat's
+`playground.html` uses it instead of the forked 2.x runtime. Builds render
+at `/` in the frame. `tests/browser/playground.mjs` checks it end to end.
+The frame loads assembler-chat's runtime (vapor by path, HEAD) and runs
+builds made against the template's pin (v3.1.1), so the two must stay
+compatible: move the template pin when the runtime's ABI changes. vapor
+`58b5944` is local, not pushed or released.
+
+The frame is same-origin with assembler-chat and unsandboxed, so playground
+code can read the app's cookies and storage. It runs the user's own (or
+the model's) code in the user's browser, so this is self-XSS, not a hole
+for others, but a sandboxed frame on another origin would be safer.
 
 Layout: `src/main.zig` (env, paths), `src/app.zig` (routes), `src/chat.zig`,
 `src/WasmBuilder.zig`, `src/Settings.zig` (every env var and its default),
@@ -47,9 +61,6 @@ Decisions and known gaps:
   text, so that call should go (step 6).
 - vapor 3.1.1 bug: `TextField(.float).bind(&f32)` does not compile
   (`text_field/value.zig:518` assigns `evt.number()`'s `i32` to `f32`).
-- `main_sample.zig` does not compile on 3.1.1 (`.shadow(.{ .top = ... })`;
-  use `.shadow(.dropShadow(12, 12, 0, 0, color))`). `editor_sample.zig`
-  does.
 - reverb's `Date` header is a month ahead (`Nov` on 2026-10-19).
 
 ## Why it exists
@@ -176,9 +187,11 @@ Settings). Those don't involve this backend.
 - End to end: `zig build` in `../assembler-chat`, run this backend on
   :8080, then `SITE=../assembler-chat node tests/browser/smoke.mjs /playground`.
   Also use `crawl.mjs` (clicks every control) and `typing.mjs` (types into
-  every field). They serve the app themselves on a random port. Add a
-  real playground test: submit the sample, wait for the iframe to render
-  its content, and assert no console errors.
+  every field). They serve the app themselves on a random port.
+- The playground: `SITE=../assembler-chat node tests/browser/playground.mjs`
+  starts this backend on :8080 itself (stop any other first), clicks
+  Submit, and waits for the sample to render in the frame with no errors
+  in page or frame. Needs `zig build` here and in assembler-chat.
 - Without the backend, assembler-chat logs only network errors (verified
   2026-10-19, Debug and ReleaseSmall).
 
