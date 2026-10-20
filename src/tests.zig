@@ -37,7 +37,7 @@ const Harness = struct {
     fn startWithDb(h: *Harness, settings: Settings, db: ?*pg.Pool) !void {
         h.arena = .init(testing.allocator);
         errdefer h.arena.deinit();
-        h.builds = testing.tmpDir(.{});
+        h.builds = testing.tmpDir(.{ .iterate = true });
         errdefer h.builds.cleanup();
 
         const builder: WasmBuilder = .{
@@ -284,7 +284,7 @@ test "the versions playground code is built with" {
 }
 
 test "the template's versions are read from zig and its pin" {
-    var builds = testing.tmpDir(.{});
+    var builds = testing.tmpDir(.{ .iterate = true });
     defer builds.cleanup();
     const builder: WasmBuilder = .{ .io = testing.io, .template_path = playground_template, .builds_path = "unused" };
     var arena: std.heap.ArenaAllocator = .init(testing.allocator);
@@ -307,7 +307,7 @@ test "a wasm that was never built is a 404" {
 }
 
 test "a build past its deadline is stopped and cleaned up" {
-    var builds = testing.tmpDir(.{});
+    var builds = testing.tmpDir(.{ .iterate = true });
     defer builds.cleanup();
     const builds_path = try builds.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
     defer testing.allocator.free(builds_path);
@@ -481,7 +481,7 @@ test "chat rejects a body without a query before calling the model" {
 }
 
 test "every complete example in the system prompt compiles against the template" {
-    var builds = testing.tmpDir(.{});
+    var builds = testing.tmpDir(.{ .iterate = true });
     defer builds.cleanup();
     const builds_path = try builds.dir.realPathFileAlloc(testing.io, ".", testing.allocator);
     defer testing.allocator.free(builds_path);

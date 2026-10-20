@@ -46,7 +46,9 @@ pub fn build(b: *const WasmBuilder, gpa: Allocator, source: []const u8) !Outcome
     const io = b.io;
     if (source.len > max_source_len) return .{ .failed = try gpa.dupe(u8, "error: source is larger than 256 KB") };
 
-    var builds = try Io.Dir.cwd().createDirPathOpen(io, b.builds_path, .{});
+    // Iterable, for `sweep`: Linux cannot list a directory opened without
+    // it (macOS can, so only CI caught this).
+    var builds = try Io.Dir.cwd().createDirPathOpen(io, b.builds_path, .{ .open_options = .{ .iterate = true } });
     defer builds.close(io);
     b.sweep(builds);
 
