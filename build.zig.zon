@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .reverb = .{
-            .url = "git+https://github.com/senet-toolbox/reverb#7791913363101e368b6fb73046b3cdfb957ce855",
-            .hash = "reverb-0.0.0-Gtb4ydiBDADfbEkBXtyuGrM5UdqAKM04zcGVSFfiUpGP",
+            .url = "git+https://github.com/senet-toolbox/reverb#07ccfa87f4d029c77b6a3f23a295419866959ff1",
+            .hash = "reverb-0.0.0-Gtb4yb6CDABgzDg936pQAASJQtbtYU3poXj9XN-SjO-l",
         },
         // Private repo, so not fetchable by URL; the sibling checkout
         // (5396745 when added).

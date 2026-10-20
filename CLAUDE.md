@@ -76,10 +76,9 @@ editor's `recompile` clears its errors before drawing, so vaporize gained
   the user's own keys; only the Vertex toggle reaches this backend
   (`/api/vertex`). The unescaping fix is on that path, checked by building
   and reading, not in a browser.
-- reverb's `ctx.JSON` formats into `ctx.arena`, which lives as long as the
-  process, so every JSON response leaks its body. reverb-auth's session
-  routes use it. `/api/wasm/versions` builds its JSON in request memory
-  instead. The fix is a one-line reverb change (`requestAllocator()`).
+- reverb's `ctx.JSON` kept every response body (it formatted into the
+  process-lifetime `ctx.arena`); reverb-auth's session routes use it.
+  Fixed in reverb `07ccfa8`, pinned here and in reverb-auth.
 - vaporize's `zig build test` runs none of `ZigParser.zig`'s tests: its
   root never references them, and they need an app's vapor (with its
   config and theme modules) to build.
@@ -104,7 +103,8 @@ Decisions and known gaps:
   503. Requests may wait 10 min for a reply (`Config.reply_timeout_ms`).
   Shutdown waits for queued jobs to finish, which can take a while with
   builds queued.
-- reverb is pinned at `7791913` (deferred replies), which pins Loom
+- reverb is pinned at `07ccfa8` (deferred replies, and `ctx.JSON` no longer
+  leaking), which pins Loom
   `8d791ac`. Both are pushed.
 - The deferred chat path was never run against a model: claude-zig's base
   URL is fixed, so tests cannot fake the API, and there is no key here.
@@ -146,7 +146,7 @@ after the snapshot.
 
 | Package | Commit | Use |
 |---|---|---|
-| reverb | `7791913363101e368b6fb73046b3cdfb957ce855` | HTTP server. Public. Pinned here by URL and hash (see `build.zig.zon`); metal still pins the older `57375b7`. README has the `Server(Config)` quickstart and "Replying later". |
+| reverb | `07ccfa87f4d029c77b6a3f23a295419866959ff1` | HTTP server. Public. Pinned here by URL and hash (see `build.zig.zon`); metal still pins the older `57375b7`. README has the `Server(Config)` quickstart and "Replying later". |
 | claude-zig | `5396745` | Claude + Vertex clients (modules `claude`, `vertex`). Reads no env itself: `init.environ_map.get("ANTHROPIC_API_KEY")` in `main` (see `examples/claude_demo.zig`). It no longer injects any system prompt; this backend must send its own. |
 | reverb-auth | `a47c0e5` | OAuth (Google, GitHub), sessions, JWT. Its README says reverb is private; that's stale (reverb is public now). It uses a path dep on `../reverb`. |
 | stripe-zig | `2f20771` | Stripe client, for `/checkout` (later). |
