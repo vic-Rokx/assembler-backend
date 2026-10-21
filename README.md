@@ -18,7 +18,7 @@ people in with Google. It is written in Zig 0.16 on
 | --- | --- |
 | `POST /api/wasm/build` | The body is a `main.zig`. Answers `200` with a build id, `500` with the compiler's `file:line:col: error: ...` lines, or `503` when the build queue is full. |
 | `GET /api/wasm/build/<id>.wasm` | The build, as `application/wasm`. |
-| `GET /api/wasm/versions` | `{"zig": "0.16.0", "vapor": "3.1.2"}`: what code is built with. |
+| `GET /api/wasm/versions` | `{"zig": "0.16.0", "vapor": "3.1.3"}`: what code is built with. |
 | `POST /exchange/google/token`, `/auth/session/{bootstrap,refresh,signout}`, `/auth/validate/google/session` | Google sign-in for vapor's KeyStone, when configured. |
 | `POST /chat`, `POST /api/vertex` | A prompt answered by Claude with the server's own credentials, for self-hosting. |
 | `GET /` | `SUCCESS`. |
@@ -55,7 +55,7 @@ flowchart LR
   sizes are the concurrency caps, and a full queue answers `503` at once.
   Both pieces were added to reverb and Loom for this backend.
 - **Builds are contained.** Each one gets its own folder, made from a fixed
-  template pinned to vapor 3.1.2 (`playground_template/`). A request
+  template pinned to vapor 3.1.3 (`playground_template/`). A request
   supplies only `src/main.zig`, never a path or a build option. A build
   that passes its deadline has its whole process group killed. The
   compiler's output is cut down to the diagnostics, without the server's

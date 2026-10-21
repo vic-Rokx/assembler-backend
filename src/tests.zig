@@ -291,7 +291,7 @@ test "the template's versions are read from zig and its pin" {
     defer arena.deinit();
     const versions = try builder.versions(arena.allocator());
     try testing.expectEqualStrings(@import("builtin").zig_version_string, versions.zig);
-    try testing.expectEqualStrings("3.1.2", versions.vapor);
+    try testing.expectEqualStrings("3.1.3", versions.vapor);
 }
 
 test "a wasm that was never built is a 404" {

@@ -17,10 +17,10 @@ Step 4 (2026-10-20): vapor `58b5944` adds `<html data-vapor-boot="playground">`,
 the frame side of `Vapor.Wasm.runPlaygroundWasm`, and assembler-chat's
 `playground.html` uses it instead of the forked 2.x runtime. Builds render
 at `/` in the frame. `tests/browser/playground.mjs` checks it end to end.
-The frame loads assembler-chat's runtime (vapor by path, HEAD) and runs
-builds made against the template's pin (v3.1.2), so the two must stay
-compatible: move the template pin when the runtime's ABI changes. Released
-as vapor 3.1.2 (pushed, tag `v3.1.2`); the template is pinned to it.
+The frame loads assembler-chat's runtime and runs builds made against the
+template's pin, so the two must stay compatible: move both pins together.
+Released as vapor 3.1.2; since 2026-10-21 the template and assembler-chat
+are both on **v3.1.3**.
 
 The frame has its own origin (assembler-chat `-Dplayground_url`, default
 `http://localhost:5174/playground.html`; in production e.g.
@@ -62,8 +62,10 @@ button, or the user and Sign out; the callback page reports the outcome.
   the frontend and backend are the same site (`app.example.com` and
   `api.example.com`); a frontend on another site needs
   `COOKIE_SAMESITE=none` with `SECURE_COOKIES=1`, which startup enforces.
-- vapor's KeyStone makes the OAuth `state` from a timestamp, which is
-  guessable; it should be random. A vapor change.
+- vapor's KeyStone made the OAuth `state` from a timestamp, and exchanged
+  a callback's code when no sign-in was pending (login CSRF). Fixed in
+  vapor 3.1.3 (`ca94e62`, with a browser test): 128 random bits, required
+  at the callback. `signin.mjs` passes against it.
 - pg-orm bugs found here, fixed in pg-orm `0d83ad8` (2026-10-20, pushed):
   `Connection.init` gave `pg.Pool` an `Io` in its own stack frame (it now
   takes one), and `RETURNING`, `SELECT` without `.select()` and renamed
@@ -139,9 +141,8 @@ Decisions and known gaps:
   temporarily; don't commit that form.
 - `/chat` and `/api/vertex` were never called against the real API (no key
   in the session). Default model `claude-opus-5-5`.
-- `TextField(.float).bind(&f32)` did not compile in vapor 3.1.x; fixed in
-  vapor `e0b5ec0` (pushed, unreleased, with a browser test). The template
-  gets it with the next vapor release.
+- `TextField(.float).bind(&f32)` did not compile before vapor 3.1.3; the
+  system prompt now allows it, and `src/testdata/prompt_api.zig` binds one.
 - reverb's `Date` header named the next month (`std.time.epoch.Month`
   counts from 1); fixed in reverb `7862f54`, pinned here and in
   reverb-auth (`83a8e05`).
@@ -223,7 +224,7 @@ Settings). Those don't involve this backend.
      `https://github.com/senet-toolbox/vapor/archive/refs/tags/v3.1.1.tar.gz`,
      hash `vapor-3.1.1-VGoNdYnwEwAoDDctBmqdky3a-6O9NZ4_FBhGUqYWTzEV`, plus
      vaporize if the samples need it; it's on 3.1.1 too; the template is on
-     **v3.1.2** since 2026-10-20). Move the pin with
+     **v3.1.3** since 2026-10-21). Move the pin with
      each vapor release, the same way metal does. Mirror assembler-chat's
      `build.zig` (wasm32-wasi, `entry = .disabled`, `rdynamic`, theme and
      config modules).

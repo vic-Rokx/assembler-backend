@@ -8,6 +8,7 @@ pub const std_options = std.Options{ .logFn = Vapor.lib.log };
 
 var name: []const u8 = "";
 var age: i32 = 0;
+var height: f32 = 0;
 var secret: []const u8 = "";
 var email: []const u8 = "";
 var hovered = false;
@@ -70,6 +71,7 @@ fn render() void {
             Vapor.Label("Name").end();
             Vapor.TextField(.string).bind(&name).onChange(changed, .{}).end();
             Vapor.TextField(.int).bind(&age).end();
+            Vapor.TextField(.float).bind(&height).end();
             Vapor.TextField(.password).bind(&secret).end();
             Vapor.TextField(.email).bind(&email).end();
             Vapor.TextArea().bind(&name).end();

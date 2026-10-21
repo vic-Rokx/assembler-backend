@@ -195,7 +195,7 @@ fn runBuild(job: BuildJob) void {
     }
 }
 
-/// `GET /api/wasm/versions`: `{"zig": "0.16.0", "vapor": "3.1.2"}`, what
+/// `GET /api/wasm/versions`: `{"zig": "0.16.0", "vapor": "3.1.3"}`, what
 /// playground code is built with.
 fn getVersions(ctx: *Context) !void {
     // Not `ctx.JSON`: it allocates from memory that lives as long as the
