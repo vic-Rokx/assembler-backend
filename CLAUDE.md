@@ -64,10 +64,13 @@ button, or the user and Sign out; the callback page reports the outcome.
   `COOKIE_SAMESITE=none` with `SECURE_COOKIES=1`, which startup enforces.
 - vapor's KeyStone makes the OAuth `state` from a timestamp, which is
   guessable; it should be random. A vapor change.
-- pg-orm bugs found, not fixed (it has uncommitted work): `Connection.init`
-  gives `pg.Pool` an `Io` pointing at its own stack frame, and the insert
-  builder's `RETURNING` maps no columns back. This backend builds its
-  `pg.Pool` itself and upserts with raw SQL.
+- pg-orm bugs found here, fixed in pg-orm `0d83ad8` (2026-10-20, local):
+  `Connection.init` gave `pg.Pool` an `Io` in its own stack frame (it now
+  takes one), and `RETURNING`, `SELECT` without `.select()` and renamed
+  columns mapped nothing back. Its `src/live_test.zig` runs against
+  Postgres when `PG_DB` is set (`PG_PORT=54329 PG_DB=pg_orm_test` with the
+  container below). This backend still builds its `pg.Pool` itself and
+  upserts with raw SQL, pinned to `b617520`.
 
 Step 6 (2026-10-20): assembler-chat `b9eca94`, vaporize `a526e0c`.
 Every `src/main.zig:L:C` error and note in a failed build is underlined
@@ -89,8 +92,8 @@ editor's `recompile` clears its errors before drawing, so vaporize gained
 - vaporize's `zig build test` runs none of `ZigParser.zig`'s tests: its
   root never references them, and they need an app's vapor (with its
   config and theme modules) to build.
-- `src/routes/Playground.zig` in assembler-chat is an older copy that only
-  `check.zig` compiles; it still has the placeholder and the old versions.
+- The old copy of the playground is gone, and `Playground_state_switch.zig`
+  is now `src/routes/Playground.zig` (assembler-chat `d15eca3`, `8e9dabe`).
 
 Exhibition readiness (2026-10-20): every dependency pinned by URL (a lone
 clone builds); MIT licenses; READMEs with screenshots (assembler-chat
@@ -135,9 +138,10 @@ Decisions and known gaps:
   temporarily; don't commit that form.
 - `/chat` and `/api/vertex` were never called against the real API (no key
   in the session). Default model `claude-opus-5-5`.
-- vapor 3.1.x bug (still in 3.1.2): `TextField(.float).bind(&f32)` does not compile
-  (`text_field/value.zig:518` assigns `evt.number()`'s `i32` to `f32`).
-- reverb's `Date` header is a month ahead (`Nov` on 2026-10-19).
+- `TextField(.float).bind(&f32)` did not compile in vapor 3.1.x; fixed in
+  vapor `e0b5ec0` (unreleased, local, with a browser test).
+- reverb's `Date` header named the next month (`std.time.epoch.Month`
+  counts from 1); fixed in reverb `7862f54` (local, not pinned here yet).
 
 ## Why it exists
 
@@ -188,7 +192,7 @@ credentials.
 |---|---|---|---|
 | `POST /chat` | `routes/api.zig` `submitToBackend` | JSON `{"query": "<prompt>"}` | Claude's reply text |
 | `POST /api/vertex` | `routes/api.zig` `submitToBackendVertex` | same | reply text |
-| `POST /api/wasm/build` | `routes/Playground_state_switch.zig` `getWasm` | raw body = the editor's `main.zig` source | 200 `success`, or 500 whose body starts `file:line:col: error: …` (the frontend splits on `:`) |
+| `POST /api/wasm/build` | `routes/Playground.zig` `getWasm` | raw body = the editor's `main.zig` source | 200 `success`, or 500 whose body starts `file:line:col: error: …` (the frontend splits on `:`) |
 | `GET /api/wasm/build` | same file, `handleWasmResponse` → `Vapor.Wasm.runPlaygroundWasm(url)` | none | the built `.wasm` bytes |
 | `POST /exchange/google/token`, `/auth/session/*`, `/auth/validate/google/session` | vapor's KeyStone (`keystone/KeyStone.zig`) | form `auth-code`, `state`, `nonce`; cookies | KeyStone's JSON session shapes |
 | `POST /checkout` | same file, `payment` (not wired to UI yet) | form-encoded | redirect URL in body |
