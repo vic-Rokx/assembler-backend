@@ -5,8 +5,8 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .reverb = .{
-            .url = "git+https://github.com/senet-toolbox/reverb#f5ec29adb64af6c85c5f51abf91b0f2f522d7b91",
-            .hash = "reverb-0.0.0-Gtb4yV6PDABcJg5RC85-5kpQLv9A2gyDXi9FUqE_vuvD",
+            .url = "git+https://github.com/senet-toolbox/reverb#7862f54f46acbefaaaee1fdcf71575a232c6fc55",
+            .hash = "reverb-0.0.0-Gtb4yRORDACUQO0xSc_6TUx5UtImaH1BZgV2o03hf6hB",
         },
         // The Claude and Vertex clients.
         .claude = .{
@@ -15,13 +15,13 @@
         },
         // Google sign-in and sessions. Pins the same reverb as above.
         .reverb_auth = .{
-            .url = "git+https://github.com/senet-toolbox/reverb-auth#fd4717fd7ba7e698b0b97a090e65ff9975c2f0f2",
-            .hash = "reverb_auth-0.0.0-OWxcT5VcAQCNasKa5dNX0jyMeFjm8UM_xHRaIh0umUlE",
+            .url = "git+https://github.com/senet-toolbox/reverb-auth#83a8e057cf2365d8772c67ec3c6c8c2d3b0ebcd3",
+            .hash = "reverb_auth-0.0.0-OWxcT5VcAQAKst7OvC_IaKbSE19enOiNsI1VD2XfhCkc",
         },
         // The users table.
         .pg_orm = .{
-            .url = "git+https://github.com/senet-toolbox/pg-orm#b617520a8c2aadd5a9ac00b5cb75acc5e00b05d4",
-            .hash = "pg_orm-0.0.0-DZids0ZiBACNhrcRrO08IoeDJuBw4JSs6sh6KWdo3a02",
+            .url = "git+https://github.com/senet-toolbox/pg-orm#0d83ad8c4f71e68fbb149f3e4ee1a6a8342b7e1a",
+            .hash = "pg_orm-0.0.0-DZids0duBABE4knJfJilUOXe1pr6cHNODYGNwgnzRVq1",
         },
     },
     .paths = .{

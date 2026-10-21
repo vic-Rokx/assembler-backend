@@ -64,13 +64,13 @@ button, or the user and Sign out; the callback page reports the outcome.
   `COOKIE_SAMESITE=none` with `SECURE_COOKIES=1`, which startup enforces.
 - vapor's KeyStone makes the OAuth `state` from a timestamp, which is
   guessable; it should be random. A vapor change.
-- pg-orm bugs found here, fixed in pg-orm `0d83ad8` (2026-10-20, local):
+- pg-orm bugs found here, fixed in pg-orm `0d83ad8` (2026-10-20, pushed):
   `Connection.init` gave `pg.Pool` an `Io` in its own stack frame (it now
   takes one), and `RETURNING`, `SELECT` without `.select()` and renamed
   columns mapped nothing back. Its `src/live_test.zig` runs against
   Postgres when `PG_DB` is set (`PG_PORT=54329 PG_DB=pg_orm_test` with the
-  container below). This backend still builds its `pg.Pool` itself and
-  upserts with raw SQL, pinned to `b617520`.
+  container below). Pinned here since 2026-10-21; this backend still
+  builds its `pg.Pool` itself and upserts with raw SQL.
 
 Step 6 (2026-10-20): assembler-chat `b9eca94`, vaporize `a526e0c`.
 Every `src/main.zig:L:C` error and note in a failed build is underlined
@@ -93,7 +93,8 @@ editor's `recompile` clears its errors before drawing, so vaporize gained
   root never references them, and they need an app's vapor (with its
   config and theme modules) to build.
 - The old copy of the playground is gone, and `Playground_state_switch.zig`
-  is now `src/routes/Playground.zig` (assembler-chat `d15eca3`, `8e9dabe`).
+  is now `src/routes/Playground.zig` (assembler-chat `d15eca3`, `8e9dabe`,
+  pushed).
 
 Exhibition readiness (2026-10-20): every dependency pinned by URL (a lone
 clone builds); MIT licenses; READMEs with screenshots (assembler-chat
@@ -124,8 +125,8 @@ Decisions and known gaps:
   503. Requests may wait 10 min for a reply (`Config.reply_timeout_ms`).
   Shutdown waits for queued jobs to finish, which can take a while with
   builds queued.
-- reverb is pinned at `f5ec29a` (deferred replies with cookies, `ctx.JSON` no longer
-  leaking), which pins Loom
+- reverb is pinned at `7862f54` (deferred replies with cookies, `ctx.JSON` no longer
+  leaking, the right month in `Date`), which pins Loom
   `8d791ac`. Both are pushed.
 - The deferred chat path was never run against a model: claude-zig's base
   URL is fixed, so tests cannot fake the API, and there is no key here.
@@ -139,9 +140,11 @@ Decisions and known gaps:
 - `/chat` and `/api/vertex` were never called against the real API (no key
   in the session). Default model `claude-opus-5-5`.
 - `TextField(.float).bind(&f32)` did not compile in vapor 3.1.x; fixed in
-  vapor `e0b5ec0` (unreleased, local, with a browser test).
+  vapor `e0b5ec0` (pushed, unreleased, with a browser test). The template
+  gets it with the next vapor release.
 - reverb's `Date` header named the next month (`std.time.epoch.Month`
-  counts from 1); fixed in reverb `7862f54` (local, not pinned here yet).
+  counts from 1); fixed in reverb `7862f54`, pinned here and in
+  reverb-auth (`83a8e05`).
 
 ## Why it exists
 
@@ -170,11 +173,11 @@ after the snapshot.
 
 | Package | Commit | Use |
 |---|---|---|
-| reverb | `f5ec29adb64af6c85c5f51abf91b0f2f522d7b91` | HTTP server. Public. Pinned here by URL and hash (see `build.zig.zon`); metal still pins the older `57375b7`. README has the `Server(Config)` quickstart and "Replying later". |
+| reverb | `7862f54f46acbefaaaee1fdcf71575a232c6fc55` | HTTP server. Public. Pinned here by URL and hash (see `build.zig.zon`); metal still pins the older `57375b7`. README has the `Server(Config)` quickstart and "Replying later". |
 | claude-zig | `5396745` | Claude + Vertex clients (modules `claude`, `vertex`). Reads no env itself: `init.environ_map.get("ANTHROPIC_API_KEY")` in `main` (see `examples/claude_demo.zig`). It no longer injects any system prompt; this backend must send its own. |
-| reverb-auth | `a47c0e5` | OAuth (Google, GitHub), sessions, JWT. Its README says reverb is private; that's stale (reverb is public now). It uses a path dep on `../reverb`. |
+| reverb-auth | `83a8e05` | OAuth (Google, GitHub), sessions, JWT. Pins the same reverb as this backend, by URL. |
 | stripe-zig | `2f20771` | Stripe client, for `/checkout` (later). |
-| pg-orm | `b617520` | Postgres ORM over pg.zig, if users are stored. |
+| pg-orm | `0d83ad8` | Postgres ORM over pg.zig: the users table's DDL. |
 
 Zig 0.16: `std.posix.getenv` is gone (env comes through `main(init)`), and
 I/O goes through `std.Io` (the old `buildWasm` already uses
