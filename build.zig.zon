@@ -20,8 +20,8 @@
         },
         // The users table.
         .pg_orm = .{
-            .url = "git+https://github.com/senet-toolbox/pg-orm#0d83ad8c4f71e68fbb149f3e4ee1a6a8342b7e1a",
-            .hash = "pg_orm-0.0.0-DZids0duBABE4knJfJilUOXe1pr6cHNODYGNwgnzRVq1",
+            .url = "git+https://github.com/senet-toolbox/pg-orm#ab43c543aa0ed72c8a55886bfdcf5ca1d6fd477c",
+            .hash = "pg_orm-0.0.0-DZids2NyBAB_n2Q5syKpupv_vihp7V8lV_MmhOoV6YAx",
         },
     },
     .paths = .{

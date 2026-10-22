@@ -73,6 +73,12 @@ button, or the user and Sign out; the callback page reports the outcome.
   Postgres when `PG_DB` is set (`PG_PORT=54329 PG_DB=pg_orm_test` with the
   container below). Pinned here since 2026-10-21; this backend still
   builds its `pg.Pool` itself and upserts with raw SQL.
+- pg-orm `ab43c54` (2026-10-22, pinned here): pg.zig `aef360f`'s
+  `Pool.initUri`, which `main` uses, freed the URL's host, user, password
+  and database as it returned, so any connection the pool opened later
+  (a replacement, or a reconnect) read freed memory; ryven's CI
+  segfaulted on it on Linux. pg-orm now pins pg.zig `2e08f98`, the last
+  commit before upstream moved to Zig 0.17.
 
 Step 6 (2026-10-20): assembler-chat `b9eca94`, vaporize `a526e0c`.
 Every `src/main.zig:L:C` error and note in a failed build is underlined
@@ -178,7 +184,7 @@ after the snapshot.
 | claude-zig | `5396745` | Claude + Vertex clients (modules `claude`, `vertex`). Reads no env itself: `init.environ_map.get("ANTHROPIC_API_KEY")` in `main` (see `examples/claude_demo.zig`). It no longer injects any system prompt; this backend must send its own. |
 | reverb-auth | `83a8e05` | OAuth (Google, GitHub), sessions, JWT. Pins the same reverb as this backend, by URL. |
 | stripe-zig | `2f20771` | Stripe client, for `/checkout` (later). |
-| pg-orm | `0d83ad8` | Postgres ORM over pg.zig: the users table's DDL. |
+| pg-orm | `ab43c54` | Postgres ORM over pg.zig: the users table's DDL. |
 
 Zig 0.16: `std.posix.getenv` is gone (env comes through `main(init)`), and
 I/O goes through `std.Io` (the old `buildWasm` already uses
